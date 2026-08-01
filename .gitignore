@@ -1,0 +1,17 @@
+node_modules/
+.claude/
+tests/reports/*.json
+tests/reports/*.html
+screenshots/
+videos/
+*.log
+.DS_Store
+
+# Ephemeral Drupal site (see README) used to run this repo's own
+# tests/features/*.feature suite locally and in CI. `ddev composer
+# create-project` generates the codebase fresh each run, so only the DDEV
+# project config itself is checked in.
+/drupal/*
+!/drupal/.ddev
+/drupal/.ddev/*
+!/drupal/.ddev/config.yaml

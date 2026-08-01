@@ -1,0 +1,76 @@
+name: Test
+
+on:
+  push:
+    branches: ['2.0.x']
+  pull_request:
+    branches: ['2.0.x']
+  workflow_dispatch:
+
+env:
+  FORCE_COLOR: '1'
+  LAUNCH_URL: http://drupal-core-steps-site.ddev.site
+
+jobs:
+  cucumber:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Install and start DDEV
+        uses: ddev/github-action-setup-ddev@v1
+        with:
+          ddevDir: drupal
+
+      - name: Build a default Drupal core site (Standard profile)
+        working-directory: drupal
+        run: |
+          ddev composer create-project drupal/recommended-project
+          ddev composer require drush/drush --no-interaction
+          ddev drush site-install standard \
+            --site-name="Drupal Core Steps" \
+            --account-name=admin --account-pass=admin \
+            --yes
+
+      - name: Wait for the site to answer over its DDEV URL
+        run: |
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$LAUNCH_URL/" || true)
+            [ "$code" = "200" ] && exit 0
+            sleep 2
+          done
+          echo "Site never settled to a clean 200 response" >&2
+          exit 1
+
+      - name: Run cucumber dry-run (no ambiguous/undefined steps)
+        run: npm run test:dry
+
+      - name: Run Drupal core step tests
+        run: npm test
+
+      - name: Show DDEV logs
+        if: always()
+        working-directory: drupal
+        run: ddev logs || true
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cucumber-report
+          path: |
+            tests/reports/cucumber_report.json
+            screenshots/
+          retention-days: 14
