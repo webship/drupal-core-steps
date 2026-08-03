@@ -1,7 +1,7 @@
-Feature: Drupal front page
+Feature: Front page
   As an anonymous visitor
-  I want the Drupal front page to load correctly
-  So that I know the site is up and rendering its core layout
+  I want the front page to load correctly
+  So that I know the site is up and rendering its layout
 
   @critical
   Scenario: Front page renders and returns 200

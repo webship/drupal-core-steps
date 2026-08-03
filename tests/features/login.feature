@@ -1,6 +1,6 @@
-Feature: Drupal login
+Feature: Login
   As an anonymous visitor
-  I want the Drupal login screen to render and authenticate correctly
+  I want the login screen to render and authenticate correctly
   So that I know authentication is available on this site
 
   Scenario: The login screen exposes username, password and submit
