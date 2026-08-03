@@ -2,7 +2,7 @@
 
 [![Test](https://github.com/webship/drupal-core-steps/actions/workflows/test.yml/badge.svg)](https://github.com/webship/drupal-core-steps/actions/workflows/test.yml)
 
-Drupal-core-specific Cucumber step definitions for [webship-js](https://www.npmjs.com/package/webship-js) — a Playwright + Cucumber BDD testing framework. `@webship/drupal-core-steps` adds a `drupal-core.steps.js` step-pack that understands the markup **Drupal core itself** renders — body classes, Form API element IDs, and core module templates that are identical regardless of theme or distribution — so you can write readable Gherkin scenarios against the main pages of any Drupal core site without hand-rolling CSS selectors.
+Drupal-core-specific Cucumber step definitions for [webship-js](https://www.npmjs.com/package/webship-js) — a Playwright + Cucumber BDD testing framework. `@webship-js/drupal-core-steps` adds a `drupal-core.steps.js` step-pack that understands the markup **Drupal core itself** renders — body classes, Form API element IDs, and core module templates that are identical regardless of theme or distribution — so you can write readable Gherkin scenarios against the main pages of any Drupal core site without hand-rolling CSS selectors.
 
 It is a **plugin for webship-js** — it does not run standalone. It ships one file of step definitions; you drop it into an existing (or new) webship-js test project.
 
@@ -38,7 +38,7 @@ Each step definition in `tests/step-definitions/drupal-core.steps.js` is documen
 ## Installation
 
 ```bash
-npm install --save-dev webship-js @webship/drupal-core-steps
+npm install --save-dev webship-js @webship-js/drupal-core-steps
 ```
 
 Add both step-definition paths to your project's `cucumber.js`:
@@ -48,7 +48,7 @@ module.exports = {
   default: {
     require: [
       'node_modules/webship-js/tests/step-definitions/**/*.js',        // webship-js core steps
-      'node_modules/@webship/drupal-core-steps/tests/step-definitions/**/*.js', // this plugin
+      'node_modules/@webship-js/drupal-core-steps/tests/step-definitions/**/*.js', // this plugin
       'tests/step-definitions/**/*.js',                                 // your own custom steps, if any
     ],
     paths: ['tests/features/**/*.feature'],
@@ -121,7 +121,7 @@ Other scripts:
 
 ## Publishing
 
-The package is publish-ready: `name`, `version`, `main`, `files`, `repository`, `license` and `publishConfig.access` are all set in `package.json`, and `LICENSE` ships with the tarball. It is released to npmjs.com as [`@webship/drupal-core-steps`](https://www.npmjs.com/package/@webship/drupal-core-steps); development happens in this private GitHub repository.
+The package is publish-ready: `name`, `version`, `main`, `files`, `repository`, `license` and `publishConfig.access` are all set in `package.json`, and `LICENSE` ships with the tarball. It is released to npmjs.com as [`@webship-js/drupal-core-steps`](https://www.npmjs.com/package/@webship-js/drupal-core-steps); development happens in this private GitHub repository.
 
 ## Contributing
 
