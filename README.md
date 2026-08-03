@@ -8,13 +8,22 @@ It is a **plugin for webship-js** — it does not run standalone. It ships one f
 
 ## What's covered
 
-- Front page / node-type body classes (`path-frontpage`, `page-node-type-<type>`)
-- Toolbar or Navigation admin bar, breadcrumb, status/error messages
-- Node pages (article, page, or any content type) and their titles
-- `/user/login`, `/user/register`, `/user/logout`, authenticated-session state, login errors
-- Core Search (`/search/node`) — results and no-results
-- Core Contact module's default "feedback" form
-- 403 (access denied) and 404 (page not found) pages
+- **Named pages** — go to login, password reset, registration, search, contact, content creation, the current user's profile, or any of the core administration screens (`/admin`, `/admin/content`, `/admin/people`, `/admin/modules`, `/admin/appearance`, `/admin/reports/status`, site information) by name instead of by path
+- **Body classes** — front page, administration page, node type, authenticated session (`path-frontpage`, `path-admin`, `page-node-type-<type>`, `user-logged-in`)
+- **Core layout blocks** — Toolbar or Navigation admin bar, breadcrumb, local tasks (tab strip), the `h1.page-title` heading
+- **Status messages** — status / warning / error, with an optional expected text
+- **Named forms** — login, registration, password reset, search, contact, site information, asserted by the id Form API derives from each machine name
+- **Authentication** — log in, log out (including core 10.3+'s logout confirmation form), password reset requests, authenticated-session assertions, login errors
+- **Content** — create a node through `/node/add/<type>`, assert the content-type body class, assert an empty or non-empty Views listing
+- **Core Search** (`/search/node`) — results and no-results
+- **Core Contact** module's default "feedback" form
+- **Error pages** — 403 (access denied) and 404 (page not found)
+- **Site fingerprint** — the `Generator` meta tag (optionally pinned to a major version) and core's JavaScript settings payload
+- **Page caching** — `X-Drupal-Cache` (Internal Page Cache) and `X-Drupal-Dynamic-Cache` (Dynamic Page Cache) hit/miss, read from the original navigation rather than a second request
+
+Every assertion step reads both polarities from a single definition — `Then I should see the breadcrumb` and `Then I should not see the breadcrumb` are the same step.
+
+Steps that webship-js already covers generically — asserting an arbitrary element, a page title, a URL, a status code — are deliberately **not** duplicated here; use the core pack's own steps for those.
 
 The step-pack covers all of the above regardless of which modules a given site has enabled — write the scenarios your site's configuration supports. This repo's own self-test suite (below) intentionally exercises only a subset: what a genuinely untouched Standard-profile install renders, with nothing installed, configured, or seeded beyond `drush site-install`.
 
@@ -56,7 +65,7 @@ This repo's own `tests/features/*.feature` files double as a working reference p
 ## Quick example
 
 ```gherkin
-Feature: Drupal front page
+Feature: Front page
 
   Scenario: Front page renders the core layout
     Given I am an anonymous user
@@ -71,7 +80,19 @@ More runnable examples: `tests/features/*.feature` in this repo.
 
 This repository is itself a working webship-js project — its `tests/features/*.feature` files run by default against a **self-hosted, genuinely default Drupal core (Standard profile) instance managed by [DDEV](https://ddev.com/)**: no recipes applied, no modules swapped, no content seeded, nothing configured beyond `drush site-install` itself. That keeps the self-test suite honest about what a brand-new Drupal core site actually renders, and side-steps the flakiness of testing against a public site whose content changes over time.
 
-Because of that, the self-test suite only covers what such a bare install provides out of the box — the front page, login/logout (valid and invalid, plus session teardown), and 403 access-denied pages for both an admin-only route and (since self-registration is disabled by default) `/user/register` itself, and the 404 page. It does **not** exercise node pages, Contact, Search, or the registration *form*: a Standard-profile install ships none of those (no Article/Page content types, no Contact or Search module, and self-registration disabled). The step-pack itself still supports all of those — see [What's covered](#whats-covered) — for use against your own site once you've enabled the relevant modules/content types.
+Because of that, the self-test suite only covers what such a bare install provides out of the box:
+
+| Area | Feature files |
+| --- | --- |
+| Public pages | `homepage`, `login`, `logout`, `password-reset`, `breadcrumb`, `local-tasks` |
+| Error pages | `error-403`, `error-404`, `anonymous-access` |
+| Administration | `admin-dashboard`, `admin-content`, `admin-people`, `admin-modules`, `admin-appearance`, `admin-status-report`, `site-information`, `user-profile`, `authenticated-access` |
+| Infrastructure | `page-cache`, `security-headers`, `drupal-generator`, `drupal-settings`, `feeds-and-robots` |
+| Cross-cutting | `accessibility`, `responsive` |
+
+It does **not** exercise content pages, Contact, or Search, nor the registration *form*: a Standard-profile install ships none of those (no Article/Page content types, no Contact or Search module, and self-registration disabled). The step-pack itself still supports all of those — see [What's covered](#whats-covered) — for use against your own site once you've enabled the relevant modules/content types.
+
+One consequence worth knowing when writing your own scenarios: webship-js's `the response status code should be <n>` re-requests the URL over HTTP without the browser's session cookies, so it always reports what an *anonymous* visitor would get. Use it to assert 403/404, and assert on rendered markup (`I should be on an admin page`, `I should see the page title "…"`) for pages that only open once signed in — which is exactly what `anonymous-access.feature` and `authenticated-access.feature` do as a matched pair.
 
 The `drupal/` directory holds a committed `.ddev/config.yaml` for this fixture site; the Drupal codebase itself (`web/`, `vendor/`, `composer.json`) is generated fresh by `ddev composer create-project` and gitignored, so every run starts from a clean install.
 
