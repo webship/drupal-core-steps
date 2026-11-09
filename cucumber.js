@@ -25,6 +25,19 @@ module.exports = {
     },
     worldParameters: {
       launchUrl: process.env.LAUNCH_URL || 'http://localhost:8080',
+      // Accounts the "I am a logged in user with the "<handle>" user" step can
+      // log in as. Keys are the handles feature files use; each entry holds the
+      // real username and password (read from the environment where possible).
+      users: {
+        admin: {
+          username: process.env.DRUPAL_ADMIN_USER || 'admin',
+          password: process.env.DRUPAL_ADMIN_PASS || 'admin',
+        },
+        editor: {
+          username: process.env.DRUPAL_EDITOR_USER || 'editor',
+          password: process.env.DRUPAL_EDITOR_PASS || 'editor',
+        },
+      },
       minWaitTime: {
         page: 3000,
         before_scenario: 0,

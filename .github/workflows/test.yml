@@ -10,6 +10,11 @@ on:
 env:
   FORCE_COLOR: '1'
   LAUNCH_URL: http://drupal-core-steps-site.ddev.site
+  # Accounts the users registry in cucumber.js logs in as (see README).
+  DRUPAL_ADMIN_USER: admin
+  DRUPAL_ADMIN_PASS: admin
+  DRUPAL_EDITOR_USER: editor
+  DRUPAL_EDITOR_PASS: editor
 
 jobs:
   cucumber:
@@ -20,7 +25,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
 
       - name: Install dependencies
@@ -43,6 +48,19 @@ jobs:
             --site-name="Drupal Core Steps" \
             --account-name=admin --account-pass=admin \
             --yes
+
+      # The self-test suite needs a little more than a bare Standard install
+      # (see "Run this repo's tests" in the README): two core recipes, a second
+      # account for the users registry, and one article plus one media item.
+      - name: Seed the fixtures the self-test suite relies on
+        working-directory: drupal
+        run: |
+          ddev drush recipe core/recipes/article_content_type
+          ddev drush recipe core/recipes/image_media_type
+          ddev drush user:create "$DRUPAL_EDITOR_USER" --mail="editor@example.com" --password="$DRUPAL_EDITOR_PASS"
+          ddev drush user:role:add content_editor "$DRUPAL_EDITOR_USER"
+          ddev drush php:script seed/standard-fixtures.php
+          ddev drush cache:rebuild
 
       - name: Wait for the site to answer over its DDEV URL
         run: |
