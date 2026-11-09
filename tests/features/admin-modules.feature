@@ -4,8 +4,7 @@ Feature: Extend page
   So that I know the extension system is intact
 
   Background:
-    Given I am on the login page
-    When I log in as "admin" with password "admin"
+    Given I am a logged in user with the "admin" user
 
   Scenario: The extend page lists core modules
     Given I am on the modules page

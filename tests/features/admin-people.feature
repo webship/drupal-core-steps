@@ -4,8 +4,7 @@ Feature: People overview
   So that I know user administration works on a fresh install
 
   Background:
-    Given I am on the login page
-    When I log in as "admin" with password "admin"
+    Given I am a logged in user with the "admin" user
 
   Scenario: The people overview lists the administrator account
     Given I am on the people page

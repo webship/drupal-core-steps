@@ -4,8 +4,7 @@ Feature: User profile
   So that I know the session is bound to a real account
 
   Background:
-    Given I am on the login page
-    When I log in as "admin" with password "admin"
+    Given I am a logged in user with the "admin" user
 
   Scenario: The account shortcut resolves to the signed-in user's profile
     Given I am on the my account page

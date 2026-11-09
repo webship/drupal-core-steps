@@ -80,6 +80,8 @@ worldParameters: {
   users: {
     admin:  { username: process.env.DRUPAL_ADMIN_USER  || 'admin',  password: process.env.DRUPAL_ADMIN_PASS  || 'admin'  },
     editor: { username: process.env.DRUPAL_EDITOR_USER || 'editor', password: process.env.DRUPAL_EDITOR_PASS || 'editor' },
+    // Not an account: the name and email an anonymous visitor types into the contact form.
+    anonymous: { name: process.env.DRUPAL_ANONYMOUS_NAME || 'Webship QA', email: process.env.DRUPAL_ANONYMOUS_EMAIL || 'qa@example.com' },
   },
 },
 ```
@@ -92,7 +94,7 @@ Given I am a logged in user with the username "editor"
 Given we are a logged in user with "admin"
 ```
 
-The step opens `/user/login`, fills `#edit-name` and `#edit-pass`, and submits by dispatching the submit button's click inside the page with the navigation wait armed in the same `Promise.all`, then settles the landing page. The in-page submit is what keeps the login reliable when a sticky bar, a chat widget or a cookie banner covers the button and a pointer click would wait on it forever. The explicit `When I log in as "admin" with password "admin"` step (after `Given I am on the login page`) is still there for the cases where the credentials are the point of the scenario, such as a wrong password.
+The step opens `/user/login`, fills `#edit-name` and `#edit-pass`, and submits by dispatching the submit button's click inside the page with the navigation wait armed in the same `Promise.all`, then settles the landing page. The in-page submit is what keeps the login reliable when a sticky bar, a chat widget or a cookie banner covers the button and a pointer click would wait on it forever. The explicit `When I log in as "admin" with password "admin"` step (after `Given I am on the login page`) is still there for the one case where the credentials are the point of the scenario, such as a wrong password in `login.feature`; every other feature in this repo logs in by handle.
 
 The counterpart for the anonymous half of an access scenario is:
 
@@ -172,6 +174,7 @@ Other scripts:
 | --- | --- |
 | `npm test` | Full suite, pretty output |
 | `npm run test:dry` | `--dry-run` — checks for undefined/ambiguous steps only |
+| `npm run test:examples` | No browser: every step's JSDoc carries five `Example #n:` lines that match its own definition and no other, and every feature step resolves to exactly one definition (also runs in CI) |
 | `npm run test:headed` | Headed browser |
 | `npm run test:chromium` / `test:firefox` / `test:webkit` | Pick a browser |
 

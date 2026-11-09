@@ -4,8 +4,7 @@ Feature: Status report
   So that I can confirm which Drupal and PHP versions are actually running
 
   Background:
-    Given I am on the login page
-    When I log in as "admin" with password "admin"
+    Given I am a logged in user with the "admin" user
 
   @critical
   Scenario: The status report renders the general information panel

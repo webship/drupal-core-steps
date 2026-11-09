@@ -4,8 +4,7 @@ Feature: Logout
   So that the next request is genuinely anonymous again
 
   Background:
-    Given I am on the login page
-    When I log in as "admin" with password "admin"
+    Given I am a logged in user with the "admin" user
     Then I should be logged in
 
   @critical

@@ -73,6 +73,9 @@ jobs:
           echo "Site never settled to a clean 200 response" >&2
           exit 1
 
+      - name: Check the step examples and feature steps against the definitions
+        run: npm run test:examples
+
       - name: Run cucumber dry-run (no ambiguous/undefined steps)
         run: npm run test:dry
 
