@@ -4,8 +4,7 @@ Feature: Basic site settings
   So that I know core configuration forms round-trip correctly
 
   Background:
-    Given I am on the login page
-    When I log in as "admin" with password "admin"
+    Given I am a logged in user with the "admin" user
 
   Scenario: The site information form renders its fields
     Given I am on the site information page

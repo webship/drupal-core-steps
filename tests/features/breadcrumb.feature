@@ -16,8 +16,7 @@ Feature: Breadcrumb trail
     And I should not see the breadcrumb
 
   Scenario: Administration pages render a breadcrumb
-    Given I am on the login page
-    When I log in as "admin" with password "admin"
+    Given I am a logged in user with the "admin" user
     And I go to "/admin/reports/status"
     Then I should be on an admin page
     And I should see the breadcrumb trail

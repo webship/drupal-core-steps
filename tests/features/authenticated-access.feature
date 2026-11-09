@@ -4,8 +4,7 @@ Feature: Authenticated access to the administration pages
   So that the 403s elsewhere in this suite are proven to be about permission
 
   Background:
-    Given I am on the login page
-    When I log in as "admin" with password "admin"
+    Given I am a logged in user with the "admin" user
     Then I should be logged in
 
   Scenario Outline: An administrative route opens for the administrator

@@ -4,8 +4,7 @@ Feature: Content overview
   So that I can tell an empty site apart from a broken listing
 
   Background:
-    Given I am on the login page
-    When I log in as "admin" with password "admin"
+    Given I am a logged in user with the "admin" user
 
   Scenario: The content overview renders its view
     Given I am on the content overview page

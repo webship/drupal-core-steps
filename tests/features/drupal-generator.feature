@@ -16,7 +16,6 @@ Feature: Generator fingerprint
     And the site should not be running Drupal 8
 
   Scenario: Administration pages report the same generator
-    Given I am on the login page
-    When I log in as "admin" with password "admin"
+    Given I am a logged in user with the "admin" user
     And I go to "/admin"
     Then the site should be running Drupal

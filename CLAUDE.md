@@ -15,6 +15,7 @@ Run from repo root, not `drupal/`.
 ```bash
 npm test                # full suite
 npm run test:dry        # --dry-run, checks for undefined/ambiguous steps, no browser
+npm run test:examples   # JSDoc examples + feature steps vs. the definitions, no browser
 npm run test:headed     # headed browser
 npm run test:chromium   # force a browser (also: test:firefox, test:webkit)
 ```

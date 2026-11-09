@@ -11,15 +11,13 @@ Feature: Page caching
     And I should see the login form
 
   Scenario: An authenticated view is never served from the internal page cache
-    Given I am on the login page
-    When I log in as "admin" with password "admin"
+    Given I am a logged in user with the "admin" user
     And I go to the homepage
     Then I should be logged in
     And the page should not be served from the page cache
 
   Scenario: A repeat authenticated view is served from the dynamic page cache
-    Given I am on the login page
-    When I log in as "admin" with password "admin"
+    Given I am a logged in user with the "admin" user
     And I go to the homepage
     And I reload the page
     Then the page should be served from the dynamic page cache

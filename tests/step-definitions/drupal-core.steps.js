@@ -57,7 +57,6 @@ const {
   setCkeditorData,
   checkboxStateByLabel,
   checkboxStateByHandle,
-  waitForMatch,
   sessionStatus,
 } = require('./drupal-helpers');
 
@@ -238,7 +237,7 @@ function navigationHeaders(world) {
  * Example #9: Given I am on the my account page
  *
  */
-Given(/^(?:I am |we are )*on the (login|sign-?in|registration|register|sign[ -]?up|password reset|reset password|forgot password|content search|search|contact[ -]?us|contact|administration|admin|content overview|people|user administration|modules?|appearance|status report|add content|content creation|user profile|my account|site information) page$/, async function (pageName) {
+Given(/^(I am |we are )*on the (login|sign-?in|registration|register|sign[ -]?up|password reset|reset password|forgot password|content search|search|contact[ -]?us|contact|administration|admin|content overview|people|user administration|modules?|appearance|status report|add content|content creation|user profile|my account|site information) page$/, async function (pronounCase, pageName) {
   const defaultTime = this.minWaitTime.page || 3000;
   await gotoUrl(this.page, this.launchUrl + ROUTES[canonicalName(pageName)]);
   await this.page.waitForSelector('body', { state: 'attached', timeout: WAIT_TIMEOUT });
@@ -478,22 +477,23 @@ Then(/^(I |we )*should( not)* see the (?:primary )?(?:local tasks|tabs)$/, async
 });
 
 /**
- * Assert the page-title block's heading (`h1.page-title`) contains a text. This
- * is the *rendered* title core puts in the page body, which is not always the
- * `<title>` element webship-js's own title steps read — admin pages in
- * particular append the site name to one and not the other.
+ * Assert the page-title block's heading (`h1.page-title`) contains, or does
+ * not contain, a text. This is the *rendered* title core puts in the page
+ * body, which is not always the `<title>` element webship-js's own title steps
+ * read — admin pages in particular append the site name to one and not the
+ * other.
  *
  * Example #1: Then I should see the page title "Log in"
  * Example #2: And we should see the page heading "Content"
  * Example #3: Then should see the page title "Status report"
- * Example #4: And I should see the page heading "Administration"
+ * Example #4: And I should not see the page heading "Access denied"
  * Example #5: Then we should see the page title "Reset your password"
  *
  */
-Then(/^(I |we )*should see the page (?:title|heading) "([^"]*)?"$/, async function (pronounCase, expectedTitle) {
+Then(/^(I |we )*should( not)* see the page (?:title|heading) "([^"]*)?"$/, async function (pronounCase, notCase, expectedTitle) {
   const heading = this.page.locator('h1.page-title, h1.title, h1').first();
   await assertPresence(heading, undefined, 'the page title ("h1.page-title")');
-  await assertContainsText(heading, expectedTitle, 'the page title');
+  await assertContainsText(heading, expectedTitle, 'the page title', { negated: Boolean(notCase) });
 });
 
 // ---------------------------------------------------------------------------
@@ -785,8 +785,10 @@ Then(/^(I |we )*should( not)* see (no )?search results$/, async function (pronou
 
 /**
  * Fill and submit the default contact form. Anonymous submissions also need a
- * name and an email address, filled with placeholder values when those fields
- * are present.
+ * name and an email address: when those fields are present they are filled
+ * from the `anonymous` entry of the users registry
+ * (`worldParameters.users.anonymous`, keys `name` and `email`), falling back
+ * to "Webship QA" / "qa@example.com".
  *
  * Example #1: When I submit the contact form with subject "Question" and message "Hello there"
  * Example #2: And we submit the contact form with subject "Support" and message "Need help"
@@ -797,13 +799,14 @@ Then(/^(I |we )*should( not)* see (no )?search results$/, async function (pronou
  */
 When(/^(I |we )*submit the contact form with subject "([^"]*)?" and message "([^"]*)?"$/, async function (pronounCase, subject, message) {
   const defaultTime = this.minWaitTime.page || 3000;
+  const anonymous = ((this.parameters && this.parameters.users) || {}).anonymous || {};
   const nameField = this.page.locator('#edit-name');
   if (await nameField.isVisible({ timeout: 3000 }).catch(() => false)) {
-    await fillField(this.page, 'name', 'Webship QA');
+    await fillField(this.page, 'name', anonymous.name || anonymous.username || 'Webship QA');
   }
   const mailField = this.page.locator('#edit-mail');
   if (await mailField.isVisible({ timeout: 3000 }).catch(() => false)) {
-    await fillField(this.page, 'mail', 'qa@example.com');
+    await fillField(this.page, 'mail', anonymous.email || 'qa@example.com');
   }
   await fillField(this.page, 'subject[0][value]', subject);
   await fillField(this.page, 'message[0][value]', message);
@@ -1108,17 +1111,7 @@ Then(/^(?:"([^"]*)" should( not)* be in the breadcrumbs?|(?:the )?breadcrumbs? s
   const notCase = supplied(textA) ? notA : notB;
   const breadcrumb = this.page.locator('.breadcrumb, nav.breadcrumb, [aria-label="Breadcrumb"]').first();
   await assertPresence(breadcrumb, undefined, 'the breadcrumb block (".breadcrumb")', { attached: true });
-  const trail = ((await breadcrumb.textContent()) || '').replace(/\s+/g, ' ').trim();
-  const found = trail.includes(text);
-  assert.ok(
-    notCase ? !found : found,
-    friendly({
-      message: notCase
-        ? `Expected the breadcrumb not to contain "${text}".`
-        : `Expected the breadcrumb to contain "${text}".`,
-      cause: `the trail reads "${trail}"`,
-    }).message
-  );
+  await assertContainsText(breadcrumb, text, 'the breadcrumb trail', { negated: Boolean(notCase) });
 });
 
 // ---------------------------------------------------------------------------
@@ -1177,15 +1170,11 @@ Then(/^the checkbox (labeled|labelled|with the id) "([^"]*)" should be (checked|
  */
 Then(/^(I |we )*should( not)* see an image with the "([^"]*)" (alt|title) text$/, async function (pronounCase, notCase, text, attribute) {
   const selector = `img[${attribute}*="${text.replace(/"/g, '\\"')}"]`;
-  const found = await waitForMatch(this.page, selector, notCase ? 1000 : budget(this));
-  assert.ok(
-    notCase ? !found : found,
-    friendly({
-      message: notCase
-        ? `Expected no image with ${attribute} text containing "${text}".`
-        : `Expected an image with ${attribute} text containing "${text}".`,
-      cause: notCase ? `"${selector}" matched` : `nothing matched "${selector}"`,
-    }).message
+  await assertPresence(
+    this.page.locator(selector).first(),
+    notCase,
+    `an image with ${attribute} text containing "${text}" ("${selector}")`,
+    { attached: true }
   );
 });
 
@@ -1402,16 +1391,11 @@ Given(/^(I am |we are )*(?:adding|creating) an? "([^"]*)"(?: content item| node)
  */
 Then(/^(?:the )?content(?: item)? should( not)* be (published|unpublished)$/, async function (notCase, state) {
   const expectUnpublished = (state === 'unpublished') !== Boolean(notCase);
-  const node = this.page.locator('article, .node, [class*="node--"]').first();
-  await node.waitFor({ state: 'attached', timeout: budget(this) }).catch(() => {});
-  const unpublished = (await this.page.locator('.node--unpublished, article.unpublished').count()) > 0;
-  assert.strictEqual(
-    unpublished,
-    expectUnpublished,
-    friendly({
-      message: `Expected the content item to be ${expectUnpublished ? 'unpublished' : 'published'}.`,
-      cause: unpublished ? 'the page carries the "node--unpublished" class' : 'the page has no "node--unpublished" class',
-    }).message
+  await assertPresence(
+    this.page.locator('.node--unpublished, article.unpublished').first(),
+    expectUnpublished ? undefined : ' not',
+    'the "node--unpublished" marker core adds to an unpublished content item',
+    { attached: true }
   );
 });
 
@@ -1447,7 +1431,10 @@ When(/^(I |we )*delete the (?:content item|node) (?:I am|we are) viewing$/, asyn
     return null;
   });
   if (!nid) {
-    throw friendly('Could not determine which content item is being viewed.', 'Open a content item\'s page first.');
+    throw friendly({
+      message: 'Could not determine which content item is being viewed.',
+      hint: 'Open a content item\'s page (a /node/<nid> URL or its alias) first; the id is read from drupalSettings, the body class, the shortlink or a node link.',
+    });
   }
   await navigate(this, `/node/${nid}/delete`);
   const confirm = this.page.locator('form.node-confirm-form #edit-submit, form.confirmation #edit-submit, ' + VISIBLE_SUBMIT).first();

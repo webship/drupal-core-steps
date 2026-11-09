@@ -16,8 +16,7 @@ Feature: Core JavaScript delivery
     And I should see the login form
 
   Scenario: Administration pages initialize the core JavaScript settings
-    Given I am on the login page
-    When I log in as "admin" with password "admin"
+    Given I am a logged in user with the "admin" user
     And I go to "/admin/content"
     Then the core JavaScript settings should be initialized
     And there should be no JavaScript errors

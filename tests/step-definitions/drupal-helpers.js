@@ -127,21 +127,39 @@ async function assertPresence(locator, negated, label, options = {}) {
 }
 
 /**
- * Assert a locator's text contains an expected substring, when the step
- * supplied one. Steps that take an optional `"..."` argument share this so the
- * "is it there" and "does it say the right thing" halves stay one step.
+ * Assert a locator's text contains — or, with `negated`, does not contain — an
+ * expected substring, when the step supplied one. Steps that take an optional
+ * `"..."` argument share this so the "is it there" and "does it say the right
+ * thing" halves stay one step.
+ *
+ * The assertion is the wait: the locator is narrowed to the elements whose
+ * text contains the substring and Playwright polls for that narrowed set to
+ * exist (or to be gone), so text that arrives a moment after the element does
+ * still passes, and a miss fails through the authored message.
  *
  * @param {import('playwright').Locator} locator
  * @param {string|null|undefined} expectedText
  * @param {string} label
+ * @param {{negated?: boolean, timeout?: number}} [options]
  * @returns {Promise<void>}
  */
-async function assertContainsText(locator, expectedText, label) {
+async function assertContainsText(locator, expectedText, label, options = {}) {
   if (!supplied(expectedText)) return;
-  const text = ((await locator.textContent()) || '').replace(/\s+/g, ' ').trim();
-  if (!text.includes(expectedText)) {
+  const negated = Boolean(options.negated);
+  // Whitespace-collapsed, case-sensitive substring match, as a regex so
+  // Playwright's `hasText` keeps the case.
+  const pattern = new RegExp(
+    expectedText.trim().split(/\s+/).map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+')
+  );
+  const withText = locator.filter({ hasText: pattern });
+  try {
+    await withText.waitFor({ state: negated ? 'detached' : 'attached', timeout: options.timeout || WAIT_TIMEOUT });
+  } catch (error) {
+    const text = ((await locator.textContent({ timeout: 1000 }).catch(() => '')) || '').replace(/\s+/g, ' ').trim();
     throw friendly({
-      message: `Expected ${label} to contain "${expectedText}".`,
+      message: negated
+        ? `Expected ${label} not to contain "${expectedText}".`
+        : `Expected ${label} to contain "${expectedText}".`,
       cause: `it reads "${text}"`,
       hint: 'Text is matched as a substring, whitespace-collapsed but case-sensitive.',
     });
@@ -403,8 +421,8 @@ async function checkboxStateByHandle(page, handle) {
 }
 
 /**
- * Poll until at least one element matches the selector, or the budget runs
- * out.
+ * Wait until at least one element matches the selector, or the budget runs
+ * out. Web-first: Playwright polls the locator itself, no fixed sleeps.
  *
  * @param {import('playwright').Page} page
  * @param {string} selector
@@ -412,12 +430,12 @@ async function checkboxStateByHandle(page, handle) {
  * @returns {Promise<boolean>}
  */
 async function waitForMatch(page, selector, timeout) {
-  const start = Date.now();
-  do {
-    if (await page.locator(selector).count()) return true;
-    await page.waitForTimeout(150);
-  } while (Date.now() - start < timeout);
-  return false;
+  try {
+    await page.locator(selector).first().waitFor({ state: 'attached', timeout });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

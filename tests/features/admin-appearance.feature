@@ -4,8 +4,7 @@ Feature: Appearance page
   So that I know the theme system is registered correctly
 
   Background:
-    Given I am on the login page
-    When I log in as "admin" with password "admin"
+    Given I am a logged in user with the "admin" user
 
   Scenario: The appearance page lists the default and admin themes
     Given I am on the appearance page

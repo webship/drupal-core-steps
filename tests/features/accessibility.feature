@@ -21,8 +21,7 @@ Feature: Baseline accessibility
     And the page should have exactly one h1
 
   Scenario: Administration listings keep their landmarks
-    Given I am on the login page
-    When I log in as "admin" with password "admin"
+    Given I am a logged in user with the "admin" user
     And I go to "/admin/content"
     Then the page should have a main landmark
     And the page should have exactly one h1

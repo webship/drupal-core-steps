@@ -4,8 +4,7 @@ Feature: Administration dashboard
   So that I know the admin interface is reachable after signing in
 
   Background:
-    Given I am on the login page
-    When I log in as "admin" with password "admin"
+    Given I am a logged in user with the "admin" user
 
   @critical
   Scenario: The administration page renders with the admin body class

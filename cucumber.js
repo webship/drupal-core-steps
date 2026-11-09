@@ -37,6 +37,12 @@ module.exports = {
           username: process.env.DRUPAL_EDITOR_USER || 'editor',
           password: process.env.DRUPAL_EDITOR_PASS || 'editor',
         },
+        // The name and email an anonymous visitor types into forms that ask
+        // for them (the contact form); not an account.
+        anonymous: {
+          name: process.env.DRUPAL_ANONYMOUS_NAME || 'Webship QA',
+          email: process.env.DRUPAL_ANONYMOUS_EMAIL || 'qa@example.com',
+        },
       },
       minWaitTime: {
         page: 3000,
