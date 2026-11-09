@@ -15,3 +15,5 @@ videos/
 !/drupal/.ddev
 /drupal/.ddev/*
 !/drupal/.ddev/config.yaml
+# The drush script that seeds the self-test fixtures (see README).
+!/drupal/seed

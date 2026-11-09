@@ -4,7 +4,7 @@
 
 Drupal-core-specific Cucumber step definitions for [webship-js](https://www.npmjs.com/package/webship-js) — a Playwright + Cucumber BDD testing framework. `@webship-js/drupal-core-steps` adds a `drupal-core.steps.js` step-pack that understands the markup **Drupal core itself** renders — body classes, Form API element IDs, and core module templates that are identical regardless of theme or distribution — so you can write readable Gherkin scenarios against the main pages of any Drupal core site without hand-rolling CSS selectors.
 
-It is a **plugin for webship-js** — it does not run standalone. It ships one file of step definitions; you drop it into an existing (or new) webship-js test project.
+It is a **plugin for webship-js**, so it does not run standalone. It ships one file of step definitions plus a small helpers module (`drupal-helpers.js`, which other Drupal step packs such as `@webship-js/drupal-cms-steps` build on); you drop it into an existing (or new) webship-js test project.
 
 ## What's covered
 
@@ -13,8 +13,16 @@ It is a **plugin for webship-js** — it does not run standalone. It ships one f
 - **Core layout blocks** — Toolbar or Navigation admin bar, breadcrumb, local tasks (tab strip), the `h1.page-title` heading
 - **Status messages** — status / warning / error, with an optional expected text
 - **Named forms** — login, registration, password reset, search, contact, site information, asserted by the id Form API derives from each machine name
-- **Authentication** — log in, log out (including core 10.3+'s logout confirmation form), password reset requests, authenticated-session assertions, login errors
-- **Content** — create a node through `/node/add/<type>`, assert the content-type body class, assert an empty or non-empty Views listing
+- **Authentication**: log in by a user handle from the users registry (`Given I am a logged in user with the "admin" user`), or with explicit credentials, log out (including core 10.3+'s logout confirmation form), make sure a session is anonymous (`Given I am not logged in`), password reset requests, authenticated-session assertions, login errors
+- **Session-aware HTTP status**: `the page should return HTTP status 403` re-requests the current page with the browser's own cookies, so it answers for the signed-in user (webship-js's status step answers for an anonymous visitor)
+- **Listings and operations**: assert a row of an administration listing offers (or hides) an operation such as "Edit" or "Delete", and follow an operation link of a row; combine with webship-js's `I should see "…" in the "…" row` and `I click "…" in the "…" row`
+- **Breadcrumb text**: `"Home" should be in the breadcrumb`, `the breadcrumb should not contain "…"`
+- **Checkbox state**: by visible label or by Form API id (`the checkbox labeled "Published" should be checked`, `the checkbox with the id "edit-sticky-value" should be unchecked`)
+- **Images**: an image with a given alt or title text is (or is not) on the page
+- **Rich text editor (CKEditor 5)**: fill or append a rich text field by label, name or id, and press a toolbar command button ("Bold", "Insert Media", …)
+- **Media library**: open a field's media library, select a media item by name, insert the selection (or submit the dialog)
+- **Content**: open the add form of a content type (`Given I am adding an "article"`), create a node through `/node/add/<type>`, assert the content-type body class, assert the item is published or unpublished, delete the item being viewed, assert an empty or non-empty Views listing
+- **Caches and forms**: flush all caches from the Performance page; submit a form by the id of its submit button with an in-page click that survives sticky bars and overlays
 - **Core Search** (`/search/node`) — results and no-results
 - **Core Contact** module's default "feedback" form
 - **Error pages** — 403 (access denied) and 404 (page not found)
@@ -62,6 +70,40 @@ module.exports = {
 
 This repo's own `tests/features/*.feature` files double as a working reference project for the full setup.
 
+### Users registry and the login idiom
+
+Feature files should never carry credentials. Declare the accounts once in `cucumber.js` under `worldParameters.users`, keyed by the handle the scenarios use:
+
+```javascript
+worldParameters: {
+  launchUrl: process.env.LAUNCH_URL || 'https://your-drupal-site.example',
+  users: {
+    admin:  { username: process.env.DRUPAL_ADMIN_USER  || 'admin',  password: process.env.DRUPAL_ADMIN_PASS  || 'admin'  },
+    editor: { username: process.env.DRUPAL_EDITOR_USER || 'editor', password: process.env.DRUPAL_EDITOR_PASS || 'editor' },
+  },
+},
+```
+
+Then log in by handle:
+
+```gherkin
+Given I am a logged in user with the "admin" user
+Given I am a logged in user with the username "editor"
+Given we are a logged in user with "admin"
+```
+
+The step opens `/user/login`, fills `#edit-name` and `#edit-pass`, and submits by dispatching the submit button's click inside the page with the navigation wait armed in the same `Promise.all`, then settles the landing page. The in-page submit is what keeps the login reliable when a sticky bar, a chat widget or a cookie banner covers the button and a pointer click would wait on it forever. The explicit `When I log in as "admin" with password "admin"` step (after `Given I am on the login page`) is still there for the cases where the credentials are the point of the scenario, such as a wrong password.
+
+The counterpart for the anonymous half of an access scenario is:
+
+```gherkin
+Given I am not logged in
+```
+
+It clears the browser's cookies and web storage, reloads, then opens `/user/login` and confirms the login form is shown (an authenticated visitor is redirected to their profile instead), so the scenario really starts anonymous.
+
+When many scenarios log in as the same account, log in once and reuse the session with webship-js's auth state steps: `When I save the auth state to "tests/auth/admin.json"` after the login, then `Given I restore the auth state from "tests/auth/admin.json"` in the other scenarios. That skips the login form entirely and is the biggest speedup available for an authenticated suite.
+
 ## Quick example
 
 ```gherkin
@@ -78,19 +120,20 @@ More runnable examples: `tests/features/*.feature` in this repo.
 
 ## Running this repo's own test suite
 
-This repository is itself a working webship-js project — its `tests/features/*.feature` files run by default against a **self-hosted, genuinely default Drupal core (Standard profile) instance managed by [DDEV](https://ddev.com/)**: no recipes applied, no modules swapped, no content seeded, nothing configured beyond `drush site-install` itself. That keeps the self-test suite honest about what a brand-new Drupal core site actually renders, and side-steps the flakiness of testing against a public site whose content changes over time.
+This repository is itself a working webship-js project: its `tests/features/*.feature` files run by default against a **self-hosted Drupal core (Standard profile) instance managed by [DDEV](https://ddev.com/)**, installed with `drush site-install` and then seeded with the smallest set of fixtures the steps need: two core recipes (the Article content type and the Image media type), a second account for the users registry, and one article plus one media item. Nothing else is configured, so the suite stays honest about what a fresh Drupal core site renders, and it side-steps the flakiness of testing against a public site whose content changes over time.
 
-Because of that, the self-test suite only covers what such a bare install provides out of the box:
+The self-test suite therefore covers what such an install provides:
 
 | Area | Feature files |
 | --- | --- |
-| Public pages | `homepage`, `login`, `logout`, `password-reset`, `breadcrumb`, `local-tasks` |
-| Error pages | `error-403`, `error-404`, `anonymous-access` |
-| Administration | `admin-dashboard`, `admin-content`, `admin-people`, `admin-modules`, `admin-appearance`, `admin-status-report`, `site-information`, `user-profile`, `authenticated-access` |
+| Public pages | `homepage`, `login`, `logout`, `users-registry`, `password-reset`, `breadcrumb`, `breadcrumb-text`, `local-tasks`, `images` |
+| Error pages | `error-403`, `error-404`, `anonymous-access`, `session-status` |
+| Administration | `admin-dashboard`, `admin-content`, `listing-operations`, `admin-people`, `admin-modules`, `admin-appearance`, `admin-status-report`, `site-information`, `user-profile`, `authenticated-access`, `checkbox-state`, `caches` |
+| Content authoring | `rich-text-editor`, `media-library` |
 | Infrastructure | `page-cache`, `security-headers`, `drupal-generator`, `drupal-settings`, `feeds-and-robots` |
 | Cross-cutting | `accessibility`, `responsive` |
 
-It does **not** exercise content pages, Contact, or Search, nor the registration *form*: a Standard-profile install ships none of those (no Article/Page content types, no Contact or Search module, and self-registration disabled). The step-pack itself still supports all of those — see [What's covered](#whats-covered) — for use against your own site once you've enabled the relevant modules/content types.
+It does **not** exercise Contact or Search, nor the registration *form*: a Standard-profile install ships neither module and has self-registration disabled. The step-pack itself still supports those (see [What's covered](#whats-covered)) for use against your own site once you've enabled the relevant modules.
 
 One consequence worth knowing when writing your own scenarios: webship-js's `the response status code should be <n>` re-requests the URL over HTTP without the browser's session cookies, so it always reports what an *anonymous* visitor would get. Use it to assert 403/404, and assert on rendered markup (`I should be on an admin page`, `I should see the page title "…"`) for pages that only open once signed in — which is exactly what `anonymous-access.feature` and `authenticated-access.feature` do as a matched pair.
 
@@ -102,6 +145,14 @@ ddev start
 ddev composer create-project drupal/recommended-project
 ddev composer require drush/drush --no-interaction
 ddev drush site-install standard --account-name=admin --account-pass=admin --yes
+
+# Seed the fixtures the suite relies on (idempotent, see drupal/seed/standard-fixtures.php):
+ddev drush recipe core/recipes/article_content_type
+ddev drush recipe core/recipes/image_media_type
+ddev drush user:create editor --mail=editor@example.com --password=editor
+ddev drush user:role:add content_editor editor
+ddev drush php:script seed/standard-fixtures.php
+ddev drush cache:rebuild
 cd ..
 
 npm install
@@ -109,6 +160,10 @@ npx playwright install --with-deps chromium
 LAUNCH_URL=http://drupal-core-steps-site.ddev.site npm test
 LAUNCH_URL=https://your-site.example npm test   # runs against your own site instead
 ```
+
+The seed script adds a "Media" field (media library widget) to Article, one Image media item named "Sample image" (alt "Sample image alt text", title "Sample image title text") and one published article, "Sample article" at `/sample-article`, that is not promoted to the front page. The `editor` account holds the Content editor role. The account names and passwords are read from `DRUPAL_ADMIN_USER`, `DRUPAL_ADMIN_PASS`, `DRUPAL_EDITOR_USER` and `DRUPAL_EDITOR_PASS` (defaults `admin`/`admin` and `editor`/`editor`), both by `cucumber.js` and by the CI workflow.
+
+Against DDEV's HTTPS URL, pass the mkcert root certificate to Node as well, because one webship-js step re-requests the page outside the browser: `NODE_EXTRA_CA_CERTS=$(mkcert -CAROOT)/rootCA.pem LAUNCH_URL=https://drupal-core-steps-site.ddev.site npm test`.
 
 Other scripts:
 

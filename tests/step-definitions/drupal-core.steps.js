@@ -41,103 +41,35 @@ const {
   fillField,
   friendly,
 } = require('webship-js/tests/step-definitions/webship');
-
-// Kept below webship-js's 45s step timeout so a locator that never settles
-// fails through the authored message below, not as "function timed out".
-const WAIT_TIMEOUT = 30000;
-
-// `#edit-submit` is not unique on a Drupal page: a search block, an exposed
-// Views filter or a second form rendered from the anonymous page cache can each
-// carry the same id, because blocks assembled from separate render caches do
-// not share core's HTML-id dedup registry. Every submit click in this file goes
-// through the visible one.
-const VISIBLE_SUBMIT = '#edit-submit:visible';
+const {
+  WAIT_TIMEOUT,
+  VISIBLE_SUBMIT,
+  supplied,
+  budget,
+  navigate,
+  waitForState,
+  assertPresence,
+  assertContainsText,
+  resolveUser,
+  submitInPage,
+  loginWithForm,
+  robustClick,
+  setCkeditorData,
+  checkboxStateByLabel,
+  checkboxStateByHandle,
+  waitForMatch,
+  sessionStatus,
+} = require('./drupal-helpers');
 
 // ---------------------------------------------------------------------------
 // Helpers
+//
+// The generic plumbing (optional-argument handling, presence and text
+// assertions, the users registry, the robust in-page submit, CKEditor 5 and
+// checkbox lookups) lives in ./drupal-helpers.js so other step packs can
+// require it instead of copying it. Only the tables that name core's own
+// routes, forms and headers stay here.
 // ---------------------------------------------------------------------------
-
-/**
- * Whether an optional step argument was actually supplied.
- *
- * A regex group that did not participate in the match reaches the step body as
- * `undefined` from cucumber-js and as `null` once webship-js's argument
- * transform has run, so every optional argument here is tested through this
- * rather than against one of the two.
- *
- * @param {*} value
- * @returns {boolean}
- */
-function supplied(value) {
-  return value !== undefined && value !== null;
-}
-
-/**
- * Wait for a locator to reach a state, reporting the authored message (plus a
- * humanized cause) instead of a raw Playwright timeout.
- *
- * @param {import('playwright').Locator} locator
- * @param {'attached'|'detached'|'visible'|'hidden'} state
- * @param {string} message
- * @returns {Promise<void>}
- */
-async function waitForState(locator, state, message) {
-  try {
-    await locator.waitFor({ state, timeout: WAIT_TIMEOUT });
-  } catch (error) {
-    throw friendly(message, error);
-  }
-}
-
-/**
- * Assert an element is present or — when the step said "not" — absent.
- *
- * Every assertion step in this file routes through here so a single `( not)*`
- * group in the regex covers both polarities, rather than shipping a second
- * step definition for the negative phrasing.
- *
- * `attached` picks presence-in-DOM over visibility, for markup core renders but
- * scripts may keep hidden for a moment (body classes, the admin toolbar's
- * anti-flicker phase, the search results list inside a collapsed region).
- *
- * @param {import('playwright').Locator} locator
- * @param {string|undefined} negated - The captured " not" group, if any.
- * @param {string} label - Human description, e.g. 'the breadcrumb (".breadcrumb")'.
- * @param {{attached?: boolean}} [options]
- * @returns {Promise<void>}
- */
-async function assertPresence(locator, negated, label, options = {}) {
-  const present = options.attached ? 'attached' : 'visible';
-  const absent = options.attached ? 'detached' : 'hidden';
-  await waitForState(
-    locator,
-    negated ? absent : present,
-    negated ? `Expected ${label} to be absent` : `Expected ${label} to be present`
-  );
-}
-
-/**
- * Assert a locator's text contains an expected substring, when the step
- * supplied one. Steps that take an optional `"..."` argument share this so the
- * "is it there" and "does it say the right thing" halves stay one step.
- *
- * @param {import('playwright').Locator} locator
- * @param {string|undefined} expectedText
- * @param {string} label
- * @returns {Promise<void>}
- */
-async function assertContainsText(locator, expectedText, label) {
-  if (!supplied(expectedText)) return;
-  const text = ((await locator.textContent()) || '').replace(/\s+/g, ' ').trim();
-  assert.ok(
-    text.includes(expectedText),
-    friendly({
-      message: `Expected ${label} to contain "${expectedText}".`,
-      cause: `it reads "${text}"`,
-      hint: 'Text is matched as a substring, whitespace-collapsed but case-sensitive.',
-    }).message
-  );
-}
 
 /**
  * Reduce a phrasing variant ("sign-in", "sign up", "contact us", "my account")
@@ -361,7 +293,7 @@ Then(/^the site should( not)* be running Drupal(?: (\d+))?$/, async function (no
   const count = await meta.count();
   const content = count ? ((await meta.first().getAttribute('content')) || '') : '';
   const match = content.match(/^Drupal\s+(\d+)/i);
-  const matches = Boolean(match) && (!supplied(majorVersion) || match[1] === majorVersion);
+  const matches = Boolean(match) && (!supplied(majorVersion) || match[1] === String(majorVersion));
   const expected = supplied(majorVersion) ? `Drupal ${majorVersion}` : 'Drupal';
 
   assert.ok(
@@ -582,8 +514,10 @@ Then(/^(I |we )*should see the page (?:title|heading) "([^"]*)?"$/, async functi
  *
  */
 Then(/^(I |we )*should( not)* see (?:a|the) (?:status|success|confirmation) message(?: "([^"]*)")?$/, async function (pronounCase, notCase, expectedText) {
-  const message = this.page.locator('.messages--status').first();
-  await assertPresence(message, notCase, 'a status message (".messages--status")');
+  // Core's template carries the class; a theme with its own template still
+  // carries the aria-label core sets on every message.
+  const message = this.page.locator('.messages--status, [aria-label="Status message"]').first();
+  await assertPresence(message, notCase, 'a status message (".messages--status" or aria-label "Status message")');
   if (notCase) return;
   await assertContainsText(message, expectedText, 'the status message');
 });
@@ -601,8 +535,8 @@ Then(/^(I |we )*should( not)* see (?:a|the) (?:status|success|confirmation) mess
  *
  */
 Then(/^(I |we )*should( not)* see (?:a|the) warning(?: message)?(?: "([^"]*)")?$/, async function (pronounCase, notCase, expectedText) {
-  const message = this.page.locator('.messages--warning').first();
-  await assertPresence(message, notCase, 'a warning message (".messages--warning")');
+  const message = this.page.locator('.messages--warning, [aria-label="Warning message"]').first();
+  await assertPresence(message, notCase, 'a warning message (".messages--warning" or aria-label "Warning message")');
   if (notCase) return;
   await assertContainsText(message, expectedText, 'the warning message');
 });
@@ -620,8 +554,8 @@ Then(/^(I |we )*should( not)* see (?:a|the) warning(?: message)?(?: "([^"]*)")?$
  *
  */
 Then(/^(I |we )*should( not)* see an? (?:validation |form |login |sign-?in |authentication )?error(?: message)?(?: "([^"]*)")?$/, async function (pronounCase, notCase, expectedText) {
-  const message = this.page.locator('.messages--error').first();
-  await assertPresence(message, notCase, 'an error message (".messages--error")');
+  const message = this.page.locator('.messages--error, [aria-label="Error message"]').first();
+  await assertPresence(message, notCase, 'an error message (".messages--error" or aria-label "Error message")');
   if (notCase) return;
   await assertContainsText(message, expectedText, 'the error message');
 });
@@ -755,12 +689,12 @@ Then(/^(I |we )*should( not)* be (?:logged in|signed in|authenticated)$/, async 
  *
  * Example #1: When I log out
  * Example #2: And we log out
- * Example #3: When log out
+ * Example #3: When I logout
  * Example #4: And I sign out
  * Example #5: When we sign out
  *
  */
-When(/^(I |we )*(?:log out|sign out)$/, async function (pronounCase) {
+When(/^(I |we )*(?:log ?out|sign out)$/, async function (pronounCase) {
   const defaultTime = this.minWaitTime.page || 3000;
   await gotoUrl(this.page, this.launchUrl + '/user/logout');
   await this.page.waitForSelector('body', { state: 'attached', timeout: WAIT_TIMEOUT });
@@ -898,12 +832,27 @@ When(/^(I |we )*submit the contact form with subject "([^"]*)?" and message "([^
  */
 Then(/^(I |we )*should( not)* (?:be on|land on) the (access denied|403|404|page not found) page$/, async function (pronounCase, notCase, pageName) {
   const title = ERROR_PAGES[pageName.replace(/\s+/g, '')];
-  await assertPresence(
-    this.page.locator('h1', { hasText: title }).first(),
-    notCase,
-    `the error page template (an <h1> containing "${title}")`,
-    { attached: true }
-  );
+  // The page title block is what core renders; some admin themes move the
+  // title out of the page (the Navigation top bar) and leave no <h1>, so the
+  // document title core's System module sets for the error route counts too.
+  try {
+    await this.page.waitForFunction(
+      ({ expected, negated }) => {
+        const inHeading = [...document.querySelectorAll('h1')].some((h) => (h.textContent || '').includes(expected));
+        const inTitle = (document.title || '').trim().startsWith(expected);
+        return negated ? !(inHeading || inTitle) : (inHeading || inTitle);
+      },
+      { expected: title, negated: Boolean(notCase) },
+      { timeout: WAIT_TIMEOUT }
+    );
+  } catch (error) {
+    throw friendly(
+      notCase
+        ? `Expected not to be on the "${title}" error page`
+        : `Expected the "${title}" error page (an <h1> or the document title starting with "${title}")`,
+      error
+    );
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -946,4 +895,614 @@ Then(/^(?:the )?(?:page|response) should( not)* be served from the (dynamic page
       hint: 'The Internal Page Cache only serves anonymous requests; the Dynamic Page Cache only serves cacheable ones.',
     }).message
   );
+});
+
+// ---------------------------------------------------------------------------
+// Users registry and session
+// ---------------------------------------------------------------------------
+
+/**
+ * Log in as a user from the `worldParameters.users` registry in cucumber.js,
+ * by its handle rather than by typing credentials into the feature file:
+ *
+ *   users: {
+ *     admin:  { username: 'admin',  password: process.env.DRUPAL_ADMIN_PASS || 'admin' },
+ *     editor: { username: 'editor', password: process.env.DRUPAL_EDITOR_PASS || 'editor' },
+ *   }
+ *
+ * Opens `/user/login`, fills `#edit-name` and `#edit-pass` and submits by
+ * dispatching the submit button's click inside the page, with the navigation
+ * wait armed in the same `Promise.all`, then settles the landing page. The
+ * in-page submit is what keeps the login reliable under a sticky bar, a chat
+ * widget or a cookie banner that covers the button and would otherwise turn a
+ * pointer click into an actionability timeout.
+ *
+ * For suites that log in often, pair it once with webship-js's "I save the
+ * auth state to" step and restore that state in the other scenarios.
+ *
+ * Example #1: Given I am a logged in user with the "admin" user
+ * Example #2: Given I am a logged in user with the username "editor"
+ * Example #3: Given we are a logged in user with "admin"
+ * Example #4: Given a logged in user with the "editor" user
+ * Example #5: And I am a logged in user with the "content editor" user
+ *
+ */
+Given(/^(I am |we are )*a logged in user with( the)*( username)* "([^"]*)?"( user)*$/, async function (pronounCase, theCase, usernameCase, handle, userCase) {
+  const user = resolveUser(this, handle);
+  if (!supplied(user.password)) {
+    throw friendly({
+      message: `User "${handle}" has no password configured.`,
+      hint: 'Set users.<handle>.password in cucumber.js worldParameters (an environment variable is the usual source).',
+    });
+  }
+  await loginWithForm(this, user.username, user.password);
+});
+
+/**
+ * Make sure the session is anonymous: drop the browser's cookies and web
+ * storage, reload, then confirm by opening `/user/login` and seeing the login
+ * form (an authenticated visitor is redirected to their profile instead).
+ *
+ * The companion of the login step above for the "Given" half of an
+ * access-control scenario. webship-js's "I am an anonymous user" clears the
+ * cookies and opens the front page; this one additionally proves the site
+ * treats the session as anonymous.
+ *
+ * Example #1: Given I am not logged in
+ * Example #2: Given we are not logged in
+ * Example #3: Given not logged in
+ * Example #4: And I am not logged in
+ * Example #5: But I am not logged in
+ *
+ */
+Given(/^(I am |we are )*not logged in$/, async function (pronounCase) {
+  await this.context.clearCookies();
+  await this.page.evaluate(() => {
+    try { window.localStorage.clear(); } catch (e) { /* storage may be unavailable */ }
+    try { window.sessionStorage.clear(); } catch (e) { /* storage may be unavailable */ }
+  }).catch(() => {});
+  if (/^https?:/.test(this.page.url())) {
+    await this.page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
+  }
+  await navigate(this, '/user/login');
+  await assertPresence(
+    this.page.locator(FORMS.login.selector).first(),
+    undefined,
+    'the login form (the session should be anonymous)'
+  );
+});
+
+/**
+ * Assert the HTTP status the *current session* gets for the current page, by
+ * re-requesting it through the browser context's own cookie jar.
+ *
+ * webship-js's "the response status code should be" re-requests without the
+ * session cookies, so it always answers as an anonymous visitor; use that for
+ * public pages and this one when the answer depends on who is logged in (an
+ * editor's 403 on `/admin/people`, an administrator's 200 on the same page).
+ *
+ * Example #1: Then the page should return HTTP status 200
+ * Example #2: And the page should return HTTP status 403
+ * Example #3: Then the current page should return status 404
+ * Example #4: And the page should not return HTTP status 500
+ * Example #5: Then the page should respond with status code 200
+ *
+ */
+Then(/^(?:the )?(?:current )?page should( not)* (?:return|respond with) (?:HTTP |http )?status(?: code)? (\d+)$/, async function (notCase, expectedStatus) {
+  const url = this.page.url();
+  const status = await sessionStatus(this.page, url);
+  const expected = parseInt(expectedStatus, 10);
+  const matches = status === expected;
+  assert.ok(
+    notCase ? !matches : matches,
+    friendly({
+      message: notCase
+        ? `Expected ${url} not to return HTTP ${expected} for the current session.`
+        : `Expected ${url} to return HTTP ${expected} for the current session.`,
+      cause: `it returned ${status}`,
+      hint: 'This request carries the browser session cookies; the webship-js status step does not.',
+    }).message
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Listings and operations
+// ---------------------------------------------------------------------------
+
+/**
+ * Assert a row of an administration listing (content, people, media, files,
+ * taxonomy terms) offers, or does not offer, an operation link such as
+ * "Edit", "Delete" or "Translate". The row is found by text, the operation
+ * inside the row's operations cell (the Views `headers*="operations"` cell or
+ * the dropbutton), hidden dropbutton entries included. The trailing noun is
+ * cosmetic.
+ *
+ * The negative form also holds when the row itself is absent: an operation
+ * cannot be seen on a row that is not listed, which is exactly how core hides
+ * entities a role may not act on.
+ *
+ * Example #1: Then I should see the "Edit" operation for the "Sample article" content
+ * Example #2: And I should see the "Delete" operation for the "Sample article" entity
+ * Example #3: Then we should not see the "Edit" operation for the "Sample article" content
+ * Example #4: And I should see the "Edit" operation for the "editor" user
+ * Example #5: Then I should see the "Edit" operation for the "Sample image" media
+ *
+ */
+Then(/^(I |we )*should( not)* see the "([^"]*)" operation for the "([^"]*)"(?: (?:entity|content|item|media|file|term|user|row))?$/, async function (pronounCase, notCase, operation, rowText) {
+  await this.page.locator('tr', { hasText: rowText }).first()
+    .waitFor({ state: 'attached', timeout: budget(this) }).catch(() => {});
+  const found = await this.page.evaluate(({ rowText, operation }) => {
+    const row = [...document.querySelectorAll('tr')].find((tr) => tr.textContent.includes(rowText));
+    if (!row) return { rowMissing: true, link: false };
+    const cell = row.querySelector('[headers*="operations"], .dropbutton-wrapper, td:last-child');
+    const scope = cell || row;
+    const link = [...scope.querySelectorAll('a, button')].some((el) => el.textContent.trim() === operation);
+    return { rowMissing: false, link };
+  }, { rowText, operation });
+
+  if (notCase) {
+    if (found.rowMissing) return;
+    assert.ok(!found.link, friendly(`The "${rowText}" row unexpectedly offers the "${operation}" operation.`).message);
+    return;
+  }
+  if (found.rowMissing) {
+    throw friendly(`No listing row containing "${rowText}" was found on the page.`);
+  }
+  assert.ok(found.link, friendly(`The "${rowText}" row does not offer the "${operation}" operation.`).message);
+});
+
+/**
+ * Follow an operation link of a listing row by reading its `href` and
+ * navigating there, instead of clicking it. Core keeps the secondary
+ * operations collapsed inside a dropbutton, so the link is in the DOM but not
+ * visible, and a pointer click would wait on it forever; navigating to the
+ * link's target is what the click would have done anyway. "Edit" also
+ * matches a link whose target ends in `/edit` when the link text differs.
+ *
+ * Example #1: When I open the "Edit" link in the "Sample article" row
+ * Example #2: And I open the "Delete" operation in the "Sample article" row
+ * Example #3: When we open the "Edit" link in the "editor" row
+ * Example #4: And I open the "Translate" link in the "About us" row
+ * Example #5: When I open the "Edit" operation in the "Sample image" row
+ *
+ */
+When(/^(I |we )*open the "([^"]*)" (?:link|operation) in the "([^"]*)" row$/, async function (pronounCase, linkText, rowText) {
+  await this.page.locator('tr', { hasText: rowText }).first()
+    .waitFor({ state: 'attached', timeout: budget(this) }).catch(() => {});
+  const href = await this.page.evaluate(({ rowText, linkText }) => {
+    const rows = [...document.querySelectorAll('tr')].filter((tr) => tr.textContent.includes(rowText));
+    for (const tr of rows) {
+      const links = [...tr.querySelectorAll('a[href]')];
+      let link = links.find((a) => a.textContent.trim() === linkText);
+      if (!link && linkText.toLowerCase() === 'edit') {
+        link = links.find((a) => /\/edit(\?|$)/.test(a.getAttribute('href')));
+      }
+      if (link) return link.getAttribute('href');
+    }
+    return null;
+  }, { rowText, linkText });
+  if (!href) {
+    throw friendly(`No "${linkText}" link was found in the "${rowText}" row.`);
+  }
+  await navigate(this, href);
+});
+
+// ---------------------------------------------------------------------------
+// Breadcrumb text
+// ---------------------------------------------------------------------------
+
+/**
+ * Assert the breadcrumb block (`.breadcrumb`) contains, or does not contain,
+ * a text. Reads the whole trail, so a parent several levels up still matches.
+ * Fails distinctly when the page has no breadcrumb at all.
+ *
+ * Example #1: Then "Home" should be in the breadcrumb
+ * Example #2: And "Administration" should be in the breadcrumb
+ * Example #3: Then the breadcrumb should contain "Reports"
+ * Example #4: And the breadcrumb should not contain "Log in"
+ * Example #5: Then "Nowhere" should not be in the breadcrumb
+ *
+ */
+Then(/^(?:"([^"]*)" should( not)* be in the breadcrumbs?|(?:the )?breadcrumbs? should( not)* contain "([^"]*)")$/, async function (textA, notA, notB, textB) {
+  const text = supplied(textA) ? textA : textB;
+  const notCase = supplied(textA) ? notA : notB;
+  const breadcrumb = this.page.locator('.breadcrumb, nav.breadcrumb, [aria-label="Breadcrumb"]').first();
+  await assertPresence(breadcrumb, undefined, 'the breadcrumb block (".breadcrumb")', { attached: true });
+  const trail = ((await breadcrumb.textContent()) || '').replace(/\s+/g, ' ').trim();
+  const found = trail.includes(text);
+  assert.ok(
+    notCase ? !found : found,
+    friendly({
+      message: notCase
+        ? `Expected the breadcrumb not to contain "${text}".`
+        : `Expected the breadcrumb to contain "${text}".`,
+      cause: `the trail reads "${trail}"`,
+    }).message
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Checkbox state
+// ---------------------------------------------------------------------------
+
+/**
+ * Assert a checkbox is checked or unchecked, found either by its visible label
+ * text (`label[for]`, a wrapping label or a sibling label all work) or by a
+ * machine handle: the DOM id Form API derives from the field name
+ * (`edit-status-value`), a `data-drupal-selector` or a `name` attribute.
+ *
+ * Example #1: Then the checkbox labeled "Published" should be checked
+ * Example #2: And the checkbox labeled "Sticky at top of lists" should be unchecked
+ * Example #3: Then the checkbox with the id "edit-status-value" should be checked
+ * Example #4: And the checkbox with the id "edit-sticky-value" should be unchecked
+ * Example #5: Then the checkbox labelled "Promoted to front page" should be checked
+ *
+ */
+Then(/^the checkbox (labeled|labelled|with the id) "([^"]*)" should be (checked|unchecked)$/, async function (how, handle, state) {
+  const want = state === 'checked';
+  const byLabel = how !== 'with the id';
+  await this.page.locator(byLabel ? 'label' : 'input[type="checkbox"]').first()
+    .waitFor({ state: 'attached', timeout: budget(this) }).catch(() => {});
+  const actual = byLabel
+    ? await checkboxStateByLabel(this.page, handle)
+    : await checkboxStateByHandle(this.page, handle);
+  if (actual === null) {
+    throw friendly({
+      message: `No checkbox ${byLabel ? 'with the label' : 'with the id, data-drupal-selector or name'} "${handle}" was found.`,
+      hint: byLabel ? 'Pass the visible label text, or use "the checkbox with the id" with its machine handle.' : 'Form API derives the id from the field name: status[value] becomes edit-status-value.',
+    });
+  }
+  assert.strictEqual(
+    actual,
+    want,
+    friendly(`The "${handle}" checkbox is ${actual ? 'checked' : 'unchecked'}, expected ${state}.`).message
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Images
+// ---------------------------------------------------------------------------
+
+/**
+ * Assert an `<img>` whose `alt` or `title` attribute contains the given text
+ * is, or is not, on the page. This is how an image field's alternative text
+ * and title are checked without knowing the file URL or image style.
+ *
+ * Example #1: Then I should see an image with the "Sample image alt text" alt text
+ * Example #2: And I should see an image with the "Sample image title text" title text
+ * Example #3: Then we should see an image with the "Company logo" alt text
+ * Example #4: And I should not see an image with the "Placeholder" alt text
+ * Example #5: Then I should not see an image with the "Draft banner" title text
+ *
+ */
+Then(/^(I |we )*should( not)* see an image with the "([^"]*)" (alt|title) text$/, async function (pronounCase, notCase, text, attribute) {
+  const selector = `img[${attribute}*="${text.replace(/"/g, '\\"')}"]`;
+  const found = await waitForMatch(this.page, selector, notCase ? 1000 : budget(this));
+  assert.ok(
+    notCase ? !found : found,
+    friendly({
+      message: notCase
+        ? `Expected no image with ${attribute} text containing "${text}".`
+        : `Expected an image with ${attribute} text containing "${text}".`,
+      cause: notCase ? `"${selector}" matched` : `nothing matched "${selector}"`,
+    }).message
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Rich text editor (CKEditor 5)
+// ---------------------------------------------------------------------------
+
+/**
+ * Set the content of a CKEditor 5 rich text field, found by its label, name,
+ * id or CSS selector. Writes through the editor instance core registers in
+ * `Drupal.CKEditor5Instances`, so the value goes through the editor's own
+ * model and is synced back to the source textarea; a plain "fill in" cannot
+ * reach the editor's editable area. The value may be HTML.
+ *
+ * Example #1: When I fill in the rich text editor field "Body" with "Hello from the suite"
+ * Example #2: And I fill in the rich text editor field "Body" with the "<p>Hello</p>"
+ * Example #3: When we fill in the rich text editor field "Description" with "A short text"
+ * Example #4: And I fill in the rich text editor field "edit-body-0-value" with "By id"
+ * Example #5: When I fill in the rich text editor field "body[0][value]" with "By name"
+ *
+ */
+When(/^(I |we )*fill in the rich text editor field "([^"]*)" with(?: the)? "([^"]*)"$/, async function (pronounCase, field, value) {
+  const ok = await setCkeditorData(this.page, field, value, 'set');
+  if (!ok) {
+    throw friendly({
+      message: `Could not find a CKEditor 5 editor for the field "${field}".`,
+      hint: 'Pass the field label, name, id or selector of a text field whose format uses CKEditor 5.',
+    });
+  }
+  await waitForPageLoad(this.page, budget(this));
+});
+
+/**
+ * Append content to the end of a CKEditor 5 rich text field, keeping what is
+ * already there. Same field resolution as the fill step.
+ *
+ * Example #1: When I append the rich text editor field "Body" with "<p>One more paragraph</p>"
+ * Example #2: And I append after the rich text editor field "Body" with " and more"
+ * Example #3: When we append the rich text editor field "Description" with "Tail"
+ * Example #4: And I append the rich text editor field "edit-body-0-value" with "By id"
+ * Example #5: When I append after the rich text editor field "Body" with "<p>Signed</p>"
+ *
+ */
+When(/^(I |we )*append(?: after)? the rich text editor field "([^"]*)" with "([^"]*)"$/, async function (pronounCase, field, value) {
+  const ok = await setCkeditorData(this.page, field, value, 'append');
+  if (!ok) {
+    throw friendly({
+      message: `Could not find a CKEditor 5 editor for the field "${field}".`,
+      hint: 'Pass the field label, name, id or selector of a text field whose format uses CKEditor 5.',
+    });
+  }
+  await waitForPageLoad(this.page, budget(this));
+});
+
+/**
+ * Press a toolbar button of a CKEditor 5 rich text field by the button's
+ * accessible label ("Bold", "Link", "Insert Media", "Source"), or press the
+ * save/insert/action button of the balloon that is currently open (a link
+ * form, a media caption). The field argument is informational: core renders
+ * one toolbar per editor and the balloon belongs to the focused editor.
+ *
+ * Example #1: When I click on "Bold" command button in the rich text editor field "Body"
+ * Example #2: And I click on "Insert Media" command button in the rich text editor field "Body"
+ * Example #3: When we click on "Link" command button in the rich text editor field "Body"
+ * Example #4: And I click on the save button in "Body" rich text editor field
+ * Example #5: When I click on the insert button in the "Body" rich text editor field
+ *
+ */
+When(/^(I |we )*click on (?:"([^"]*)" command button in the rich text editor field "([^"]*)"|the (save|insert|action|apply) button in (?:the )?"([^"]*)" rich text editor field)$/, async function (pronounCase, command, commandField, actionWord, actionField) {
+  if (supplied(command)) {
+    const button = this.page.locator('.ck-toolbar button, .ck-balloon-panel button')
+      .filter({ has: this.page.locator(`span.ck-button__label:text-is("${command}")`) })
+      .first();
+    const fallback = this.page.locator(`.ck button[aria-label="${command}"], .ck button[data-cke-tooltip-text="${command}"]`).first();
+    const target = (await button.count()) ? button : fallback;
+    if (!(await target.count())) {
+      throw friendly(`No "${command}" command button was found in the rich text editor toolbar.`);
+    }
+    await robustClick(target);
+  } else {
+    const button = this.page.locator('button.ck-button-save, button.ck-button-action, .ck-balloon-panel button[type="submit"]').first();
+    if (!(await button.count())) {
+      throw friendly(`No ${actionWord} button was found for the "${actionField}" rich text editor field.`);
+    }
+    await robustClick(button);
+  }
+  await waitForPageLoad(this.page, budget(this));
+});
+
+// ---------------------------------------------------------------------------
+// Media library
+// ---------------------------------------------------------------------------
+
+/**
+ * Open the Media Library dialog of an entity reference field that uses the
+ * media library widget, by the field's machine name. Core renders the open
+ * button with the id `edit-<field>-open-button` (with a random suffix once
+ * the form has been rebuilt by AJAX), so the visible button whose id contains
+ * that fragment is the one clicked. Re-tries the click once when a previous
+ * dialog's close animation tore the new one down.
+ *
+ * Example #1: When I open the "field_media" media library
+ * Example #2: And I open the "field_image" media library
+ * Example #3: When we open the "field_media_image" media library
+ * Example #4: And I open the "field_hero" media library
+ * Example #5: When I open the "field_gallery" media library
+ *
+ */
+When(/^(I |we )*open the "([^"]*)" media library$/, async function (pronounCase, field) {
+  const fragment = field.replace(/_/g, '-');
+  const button = this.page
+    .locator(`input[id*="${fragment}-open-button"]:visible, button[id*="${fragment}-open-button"]:visible`)
+    .first();
+  await waitForState(button, 'visible', `Expected the media library open button for the "${field}" field`);
+  const dialog = this.page.locator('.ui-dialog .media-library-view, .media-library-widget-modal, .ui-dialog .media-library-wrapper').first();
+  const open = async () => {
+    await robustClick(button);
+    await waitForPageLoad(this.page, budget(this));
+  };
+  await open();
+  try {
+    await dialog.waitFor({ state: 'visible', timeout: 10000 });
+  } catch {
+    await open();
+    await waitForState(dialog, 'visible', `Expected the media library dialog for the "${field}" field to open`);
+  }
+});
+
+/**
+ * Tick a media item in the open Media Library dialog by its name, through the
+ * "Select <name>" checkbox the library grid renders. Picks the first match
+ * when several items carry the same name.
+ *
+ * Example #1: When I select the media "Sample image"
+ * Example #2: And I select the media item "Sample image"
+ * Example #3: When we select the media "Company logo"
+ * Example #4: And I select the media "Annual report"
+ * Example #5: When I select the media item "Intro video"
+ *
+ */
+When(/^(I |we )*select the media(?: item)? "([^"]*)"$/, async function (pronounCase, name) {
+  const checkbox = this.page.getByLabel(`Select ${name}`, { exact: true }).first();
+  await waitForState(checkbox, 'attached', `Expected a media library item labelled "Select ${name}"`);
+  if (!(await checkbox.isChecked().catch(() => false))) {
+    await robustClick(checkbox);
+  }
+  await waitForPageLoad(this.page, budget(this));
+});
+
+/**
+ * Press the open Media Library dialog's "Insert selected" button, placing the
+ * ticked items into the field. The button is cloned into the jQuery UI dialog
+ * button pane, so the visible copy is the one pressed; both phrasings do the
+ * same thing.
+ *
+ * Example #1: When I insert the selected media
+ * Example #2: And we insert the selected media
+ * Example #3: When I submit the media library dialog
+ * Example #4: And I submit media library dialog
+ * Example #5: When we submit the media library dialog
+ *
+ */
+When(/^(I |we )*(?:insert the selected media|submit (?:the )?media library dialog)$/, async function (pronounCase) {
+  const button = this.page
+    .locator('.ui-dialog-buttonpane button:has-text("Insert selected"), .ui-dialog button.media-library-select, .media-library-select[value="dialog-submit"]')
+    .first();
+  await waitForState(button, 'visible', 'Expected the media library dialog\'s "Insert selected" button');
+  await robustClick(button);
+  await this.page.locator('.ui-dialog .media-library-view').first()
+    .waitFor({ state: 'hidden', timeout: WAIT_TIMEOUT }).catch(() => {});
+  await waitForPageLoad(this.page, budget(this));
+});
+
+// ---------------------------------------------------------------------------
+// Content items
+// ---------------------------------------------------------------------------
+
+/**
+ * Open the add form of a content type (`/node/add/<type>`), by machine name or
+ * by a label that maps to it ("Basic page" becomes `basic_page`; pass the
+ * machine name when the label differs, as `page` does). Pair it with
+ * webship-js's field steps and the rich text editor steps to fill the form,
+ * and with "submit by id" to save it.
+ *
+ * Example #1: Given I am adding an "article"
+ * Example #2: Given I am adding a "page"
+ * Example #3: Given we are adding an "article" content item
+ * Example #4: Given I am creating a "page" node
+ * Example #5: And I am adding an "event"
+ *
+ */
+Given(/^(I am |we are )*(?:adding|creating) an? "([^"]*)"(?: content item| node)?$/, async function (pronounCase, contentType) {
+  const machineName = contentType.toLowerCase().replace(/\s+/g, '_');
+  await navigate(this, `/node/add/${machineName}`);
+  await waitForState(
+    this.page.locator('form.node-form, #edit-title-0-value').first(),
+    'attached',
+    `Expected the node form on /node/add/${machineName}`
+  );
+});
+
+/**
+ * Assert the content item being viewed is published or unpublished, via the
+ * `node--unpublished` class core's node template adds to an unpublished
+ * node. Under an editorial workflow a new item usually starts as an
+ * unpublished draft, which is what the "unpublished" form checks.
+ *
+ * Example #1: Then the content item should be published
+ * Example #2: And the content item should be unpublished
+ * Example #3: Then the content should be unpublished
+ * Example #4: And the content item should not be unpublished
+ * Example #5: Then the content should not be published
+ *
+ */
+Then(/^(?:the )?content(?: item)? should( not)* be (published|unpublished)$/, async function (notCase, state) {
+  const expectUnpublished = (state === 'unpublished') !== Boolean(notCase);
+  const node = this.page.locator('article, .node, [class*="node--"]').first();
+  await node.waitFor({ state: 'attached', timeout: budget(this) }).catch(() => {});
+  const unpublished = (await this.page.locator('.node--unpublished, article.unpublished').count()) > 0;
+  assert.strictEqual(
+    unpublished,
+    expectUnpublished,
+    friendly({
+      message: `Expected the content item to be ${expectUnpublished ? 'unpublished' : 'published'}.`,
+      cause: unpublished ? 'the page carries the "node--unpublished" class' : 'the page has no "node--unpublished" class',
+    }).message
+  );
+});
+
+/**
+ * Delete the content item being viewed through its own delete form
+ * (`/node/<nid>/delete`), reading the node id from the page's links. Keeps a
+ * content-creation scenario repeatable across runs.
+ *
+ * Example #1: When I delete the content item I am viewing
+ * Example #2: And I delete the node I am viewing
+ * Example #3: When we delete the content item we are viewing
+ * Example #4: And we delete the node we are viewing
+ * Example #5: Then I delete the content item I am viewing
+ *
+ */
+When(/^(I |we )*delete the (?:content item|node) (?:I am|we are) viewing$/, async function (pronounCase) {
+  const nid = await this.page.evaluate(() => {
+    // Core's settings payload names the current route's system path on every
+    // page, whatever the theme renders; the body class, shortlink and node
+    // links are the fallbacks.
+    const settings = window.drupalSettings && window.drupalSettings.path;
+    const fromPath = settings && typeof settings.currentPath === 'string' && (settings.currentPath.match(/^node\/(\d+)$/) || [])[1];
+    if (fromPath) return fromPath;
+    const fromBody = (document.body.className.match(/page-node-(\d+)/) || [])[1];
+    if (fromBody) return fromBody;
+    const fromShortlink = document.querySelector('link[rel="shortlink"][href*="/node/"]');
+    const fromLink = fromShortlink && (fromShortlink.getAttribute('href').match(/\/node\/(\d+)/) || [])[1];
+    if (fromLink) return fromLink;
+    for (const a of document.querySelectorAll('a[href*="/node/"]')) {
+      const match = (a.getAttribute('href') || '').match(/\/node\/(\d+)(\/|$|\?)/);
+      if (match) return match[1];
+    }
+    return null;
+  });
+  if (!nid) {
+    throw friendly('Could not determine which content item is being viewed.', 'Open a content item\'s page first.');
+  }
+  await navigate(this, `/node/${nid}/delete`);
+  const confirm = this.page.locator('form.node-confirm-form #edit-submit, form.confirmation #edit-submit, ' + VISIBLE_SUBMIT).first();
+  await waitForState(confirm, 'visible', `Expected the delete confirmation form on /node/${nid}/delete`);
+  await submitInPage(this, 'form.node-confirm-form #edit-submit, form.confirmation #edit-submit, #edit-submit', 'form.node-confirm-form, form.confirmation');
+});
+
+// ---------------------------------------------------------------------------
+// Caches and form submission
+// ---------------------------------------------------------------------------
+
+/**
+ * Clear every cache from the Performance page
+ * (`/admin/config/development/performance`), the way an administrator does
+ * after changing configuration, so a following request renders fresh. Needs a
+ * session that may administer site configuration.
+ *
+ * Example #1: When I flush all caches
+ * Example #2: And I clear all caches
+ * Example #3: When we flush all caches
+ * Example #4: Given I flush all caches
+ * Example #5: And we clear all caches
+ *
+ */
+When(/^(I |we )*(?:flush|clear) all caches$/, async function (pronounCase) {
+  await navigate(this, '/admin/config/development/performance');
+  const found = await submitInPage(this, '[data-drupal-selector="edit-clear"], #edit-clear', 'form.system-performance-settings');
+  if (!found) {
+    throw friendly({
+      message: 'Could not find "Clear all caches" on the Performance page.',
+      hint: 'Log in as a user who may administer site configuration first.',
+    });
+  }
+});
+
+/**
+ * Submit a form by the id of its submit button, dispatching the click inside
+ * the page. Core suffixes a repeated id (`edit-submit--2`) and some admin
+ * themes clone the primary button into a sticky bar that covers the original,
+ * so every element whose id, `data-drupal-selector` or `name` matches is a
+ * candidate and the visible one is clicked. Waits for the navigation the
+ * submit causes.
+ *
+ * Example #1: When I submit by id "edit-submit"
+ * Example #2: And I submit the form by id "edit-submit"
+ * Example #3: When we submit by the id "edit-preview"
+ * Example #4: And I submit the form by the id "edit-delete"
+ * Example #5: When I submit by id "edit-clear"
+ *
+ */
+When(/^(I |we )*submit (?:the form )?by (?:the )?id "([^"]*)"$/, async function (pronounCase, id) {
+  const selector = `#${id}, [id^="${id}--"], [data-drupal-selector="${id}"], [name="${id}"]`;
+  await this.page.locator(selector).first().waitFor({ state: 'attached', timeout: budget(this) }).catch(() => {});
+  const found = await submitInPage(this, selector);
+  if (!found) {
+    throw friendly(`No submit control with the id "${id}" was found on the page.`);
+  }
 });

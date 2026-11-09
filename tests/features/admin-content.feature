@@ -13,7 +13,13 @@ Feature: Content overview
     And I should see the page title "Content"
     And ".views-table" should be visible
 
-  Scenario: A site with no content shows an empty listing
+  Scenario: The content overview lists the seeded article
     Given I am on the content overview page
+    Then I should see a non-empty listing
+    And I should see "Sample article" in the "Sample article" row
+    And I should not see an error message
+
+  Scenario: Filtering for a title that does not exist shows an empty listing
+    Given I am on "/admin/content?title=no-such-title-anywhere"
     Then I should see an empty listing
     And I should not see an error message
