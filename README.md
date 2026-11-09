@@ -146,11 +146,12 @@ ddev composer create-project drupal/recommended-project
 ddev composer require drush/drush --no-interaction
 ddev drush site-install standard --account-name=admin --account-pass=admin --yes
 
-# Seed the fixtures the suite relies on (idempotent, see drupal/seed/standard-fixtures.php):
+# Seed the fixtures the suite relies on (idempotent, see tests/seed/standard-fixtures.php):
 ddev drush recipe core/recipes/article_content_type
 ddev drush recipe core/recipes/image_media_type
 ddev drush user:create editor --mail=editor@example.com --password=editor
 ddev drush user:role:add content_editor editor
+mkdir -p seed && cp ../tests/seed/standard-fixtures.php seed/
 ddev drush php:script seed/standard-fixtures.php
 ddev drush cache:rebuild
 cd ..
