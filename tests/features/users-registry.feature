@@ -33,3 +33,11 @@ Feature: Users registry login
     Given we are not logged in
     Then "#user-login-form" should be visible
     And I should not be logged in
+
+  Scenario: An account with no role logs in but stays out of the back end
+    Given I am a logged in user with the "authenticated" user
+    Then I should be logged in
+    And I should not see the navigation sidebar
+    When I am on "/admin/content"
+    Then the page should return HTTP status 403
+    And I should be on the access denied page
