@@ -39,7 +39,9 @@ ddev composer create-project drupal/recommended-project
 ddev composer require drush/drush --no-interaction
 ddev drush site-install standard --account-name=admin --account-pass=admin --yes
 ddev drush recipe core/recipes/article_content_type
+ddev drush recipe core/recipes/page_content_type
 ddev drush recipe core/recipes/image_media_type
+ddev drush pm:install layout_builder --yes
 ddev drush user:create editor --mail=editor@example.com --password=editor
 ddev drush user:role:add content_editor editor
 ddev drush user:create authenticated --mail=authenticated@example.com --password=authenticated

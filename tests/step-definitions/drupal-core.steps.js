@@ -589,7 +589,8 @@ Then(/^(I |we )*should( not)* be on an? "([^"]*)?"(?: content)? page$/, async fu
 /**
  * Create a content item through core's node form: open `/node/add/<type>`, fill
  * the title field (`#edit-title-0-value`, the id Form API derives from the base
- * field's machine name and delta) and save.
+ * field's machine name and delta) and save. The saved item is remembered as
+ * "the content item I created" for the view, edit and delete steps.
  *
  * Example #1: When I create an "article" content item titled "Release notes"
  * Example #2: And we create a "page" content item titled "About us"
@@ -611,6 +612,10 @@ When(/^(I |we )*create an? "([^"]*)?" (?:content item|node) (?:titled|with title
   await titleField.fill(title);
   await this.page.locator(VISIBLE_SUBMIT).first().click();
   await waitForPageLoad(this.page, defaultTime);
+  // The item just saved is "the content item I created" for the steps that
+  // view, edit or delete it later in the scenario.
+  const nid = await currentNodeId(this.page);
+  if (nid) this._drupalCreated = { nid, url: this.page.url() };
 });
 
 /**
