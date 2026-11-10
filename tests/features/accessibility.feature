@@ -1,3 +1,4 @@
+@a11y
 Feature: Baseline accessibility
   As a site owner
   I want the structural accessibility core guarantees on its own pages

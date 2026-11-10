@@ -30,7 +30,7 @@ No lint/typecheck script. `tsx/cjs` just lets step definitions use TS syntax at 
 
 ### Fixture Drupal site (needed before running tests locally)
 
-Tests hit `LAUNCH_URL`, a Drupal core Standard-profile install run via DDEV in `drupal/`, seeded with the minimum the steps need (two core recipes, an `editor` account, one article and one media item; see README "Running this repo's own test suite"). `drupal/web`, `vendor`, `composer.json` are generated fresh each time and gitignored; only `drupal/.ddev/config.yaml` and `drupal/seed/standard-fixtures.php` are committed.
+Tests hit `LAUNCH_URL`, a Drupal core Standard-profile install run via DDEV in `drupal/`, seeded with the minimum the steps need (two core recipes, an `editor` account, one article and one media item; see README "Running this repo's own test suite"). `drupal/web`, `vendor`, `composer.json` are generated fresh each time and gitignored; only `drupal/.ddev/config.yaml` is committed; the seed script lives at `tests/seed/standard-fixtures.php` and is copied into `drupal/seed/` before it runs.
 
 ```bash
 cd drupal
@@ -45,6 +45,7 @@ ddev drush pm:install layout_builder --yes
 ddev drush user:create editor --mail=editor@example.com --password=editor
 ddev drush user:role:add content_editor editor
 ddev drush user:create authenticated --mail=authenticated@example.com --password=authenticated
+mkdir -p seed && cp ../tests/seed/standard-fixtures.php seed/
 ddev drush php:script seed/standard-fixtures.php
 ddev drush cache:rebuild
 cd ..
@@ -66,7 +67,7 @@ CI (`.github/workflows/test.yml`) runs the same bootstrap on push/PR to `2.0.x`,
 - Two traps when adding scenarios: (1) webship-js's `the response status code should be <n>` re-requests over HTTP **without session cookies**, so it always answers as an anonymous visitor — assert authenticated pages via rendered markup instead (`I should be on an admin page`, `I should see the page title "…"`). (2) `#edit-submit` is not unique on a Drupal page; click through `#edit-submit:visible`, as the pack's `VISIBLE_SUBMIT` does.
 - **`cucumber.js`** — actual run config (require paths, `worldParameters.launchUrl`, selectors, screenshots). README's "Installation" section shows how a downstream project wires this plugin's + webship-js's step globs alongside its own.
 - **`playwright.config.ts`** — browser/launch/context options, selected via `BROWSER` env var.
-- **`drupal/`**: only `.ddev/config.yaml` and `seed/standard-fixtures.php` are committed; everything else is generated per run and gitignored.
+- **`drupal/`**: only `.ddev/config.yaml` is committed; the seed script is `tests/seed/standard-fixtures.php` (copied into `drupal/seed/` before it runs); everything else is generated per run and gitignored.
 - Structured for npm publishing (`main`/`files` in `package.json`) but not yet published; `webship-js` is a peer + dev dependency.
 
 ## Conventions

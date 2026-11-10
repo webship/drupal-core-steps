@@ -1,3 +1,4 @@
+@js-off
 Feature: Anonymous access control
   As a site owner
   I want every administrative route to refuse an anonymous visitor

@@ -1,3 +1,4 @@
+@js-off
 Feature: Access denied page
   As an anonymous visitor
   I want a clear "access denied" page for a route I'm not allowed to view

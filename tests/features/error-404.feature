@@ -1,3 +1,4 @@
+@js-off
 Feature: Page not found
   As an anonymous visitor
   I want a clear "page not found" page for a URL that does not exist
