@@ -68,6 +68,35 @@ function adminHandle(world) {
  * @param {object} world
  * @returns {Promise<void>}
  */
+/**
+ * Fill both password fields of the Add user form. Drupal 12 keeps the
+ * password confirm widget hidden until the visitor interacts with it, and a
+ * hidden field cannot be filled through the pointer, so the value is set in
+ * the page itself with the input and change events the form listens to.
+ *
+ * @param {object} world - The cucumber World.
+ * @param {string} password
+ * @returns {Promise<void>}
+ */
+async function fillPassword(world, password) {
+  const first = world.page.locator('#edit-pass-pass1').first();
+  await waitForState(first, 'attached', 'Expected the password fields ("#edit-pass-pass1", "#edit-pass-pass2") on the Add user form');
+  if (await first.isVisible().catch(() => false)) {
+    await first.fill(password);
+    await world.page.locator('#edit-pass-pass2').first().fill(password);
+    return;
+  }
+  await world.page.evaluate((password) => {
+    for (const id of ['edit-pass-pass1', 'edit-pass-pass2']) {
+      const input = document.getElementById(id);
+      if (!input) continue;
+      input.value = password;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }, password);
+}
+
 async function ensureAdminSession(world) {
   const status = await sessionStatus(world.page, joinUrl(world.launchUrl, '/admin/people/create'));
   if (status === 200) return;
@@ -135,8 +164,7 @@ Given(/^(I |we )*add (?:the )?testing users$/, async function (pronounCase) {
     await waitForState(name, 'visible', 'Expected the "Add user" form on /admin/people/create');
     await this.page.locator('#edit-mail').first().fill(user.email);
     await name.fill(user.username);
-    await this.page.locator('#edit-pass-pass1').first().fill(user.password);
-    await this.page.locator('#edit-pass-pass2').first().fill(user.password);
+    await fillPassword(this, user.password);
     for (const role of user.roles) {
       const box = this.page.locator(`input[name="roles[${role}]"]`).first();
       if (!(await box.count())) {
