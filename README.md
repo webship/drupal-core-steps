@@ -94,6 +94,10 @@ worldParameters: {
     anonymous:     { name: process.env.DRUPAL_ANONYMOUS_NAME || 'Webship QA', email: process.env.DRUPAL_ANONYMOUS_EMAIL || 'qa@example.com' },
   },
 
+  // Honeypot on the login form refuses a submit within its time limit (2 s by default):
+  // hold the login back for that long. Milliseconds; 0 on a site without Honeypot.
+  loginWait: parseInt(process.env.DRUPAL_LOGIN_WAIT || '0', 10),
+
   minWaitTime: { page: 3000, before_scenario: 0, after_scenario: 0, before_step: 0, after_step: 0 },
 
   selectors: {
@@ -133,6 +137,7 @@ Feature files never carry credentials. The `users` registry maps the handle a sc
 | `DRUPAL_EDITOR_USER` / `DRUPAL_EDITOR_PASS` / `DRUPAL_EDITOR_MAIL` | `editor` / `editor` / `editor@example.com` | the `editor` handle |
 | `DRUPAL_AUTHENTICATED_USER` / `DRUPAL_AUTHENTICATED_PASS` / `DRUPAL_AUTHENTICATED_MAIL` | `authenticated` / `authenticated` / `authenticated@example.com` | the `authenticated` handle |
 | `DRUPAL_ANONYMOUS_NAME` / `DRUPAL_ANONYMOUS_EMAIL` | `Webship QA` / `qa@example.com` | the contact form of an anonymous visitor |
+| `DRUPAL_LOGIN_WAIT` | `0` | milliseconds the login by handle waits before it submits, for a login form protected by Honeypot (its default time limit is 2 seconds: use `3000`) |
 | `WEBSHIP_STEP_TIMEOUT` | `45000` | the step timeout (a `timeout` key in cucumber.js is ignored: webship-js sets it when it loads) |
 | `HEADLESS` / `SLOW_MO` | `true` / `300` (`800` when headed) | `playwright.config.ts`; `npm run test:headed` sets `HEADLESS=false` |
 | `WEBSHIP_VIDEO`, `WEBSHIP_JS_ERROR_MODE`, `WEBSHIP_SCREENSHOT_*`, `WEBSHIP_SELECTORS_*` | see the block above | webship-js's own switches |

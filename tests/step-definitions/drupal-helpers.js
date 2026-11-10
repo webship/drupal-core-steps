@@ -267,6 +267,11 @@ async function loginWithForm(world, username, password) {
   );
   await page.locator('#edit-name').first().fill(username);
   await page.locator('#edit-pass').first().fill(password);
+  // A site that protects the login form with Honeypot refuses a form sent
+  // within its time limit (2 seconds by default): `worldParameters.loginWait`
+  // (milliseconds) holds the submit back for that long.
+  const loginWait = Number(world.parameters && world.parameters.loginWait) || 0;
+  if (loginWait > 0) await page.waitForTimeout(loginWait);
   await submitInPage(world, '#user-login-form #edit-submit, form.user-login-form #edit-submit, #edit-submit', '#user-login-form, form.user-login-form');
   // Report a refused login as what it is, instead of leaving the next step
   // to fail on a page that is still the login form.
