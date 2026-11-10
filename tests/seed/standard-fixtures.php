@@ -21,7 +21,9 @@
  *     select, with alt and title text for the image assertions;
  *   - one published Article ("Sample article" at /sample-article) so the
  *     content overview has a row with operations, and the article page shows
- *     the media image.
+ *     the media image;
+ *   - the Layout Builder module, enabled on the Article display with
+ *     per-item overrides, so the layout steps have a builder to open.
  */
 
 use Drupal\Core\File\FileExists;
@@ -120,6 +122,18 @@ if (!$node_storage->loadByProperties(['title' => 'Sample article'])) {
     'path' => ['alias' => '/sample-article'],
   ])->save();
   print "Created the Sample article.\n";
+}
+
+// 4. Layout Builder on the Article display, overridable per item, so the
+// layout steps have a builder to open (`/node/<nid>/layout`).
+if (!\Drupal::moduleHandler()->moduleExists('layout_builder')) {
+  \Drupal::service('module_installer')->install(['layout_builder']);
+  print "Installed the Layout Builder module.\n";
+}
+$article_display = \Drupal::entityTypeManager()->getStorage('entity_view_display')->load('node.article.default');
+if ($article_display && method_exists($article_display, 'enableLayoutBuilder') && !$article_display->isLayoutBuilderEnabled()) {
+  $article_display->enableLayoutBuilder()->setOverridable()->save();
+  print "Enabled Layout Builder, with overrides, on the Article display.\n";
 }
 
 print "Fixtures are in place.\n";

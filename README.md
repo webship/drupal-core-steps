@@ -23,6 +23,10 @@ It is a **plugin for webship-js**, so it does not run standalone. It ships one f
 - **Rich text editor (CKEditor 5)**: fill or append a rich text field by label, name or id, and press a toolbar command button ("Bold", "Insert Media", …)
 - **Media library**: open a field's media library, select a media item by name, insert the selection (or submit the dialog)
 - **Content**: open the add form of a content type (`Given I am adding an "article"`), create a node through `/node/add/<type>`, assert the content-type body class, assert the item is published or unpublished, delete the item being viewed, assert an empty or non-empty Views listing
+- **Forms and the admin UI**: expand or collapse a details element, open a vertical tab, wait for core's AJAX throbber, submit a confirmation form, type into the editor's link balloon and pick an autocomplete suggestion, assert what the editor holds and which toolbar buttons it offers
+- **What a scenario created**: `view|edit|delete the content item I created` after `I create an "article" content item titled "..."`; create a taxonomy term or a menu link
+- **Site structure** (what an install or a site template put in place): a module is installed, the default theme, the default theme's settings page, a role exists, a menu contains a link, the front page path, the canonical URL, a meta tag
+- **Layout Builder**: open the layout of the item on screen, add a section with a core layout, save the section and the layout, count sections, revert the override
 - **Caches and forms**: flush all caches from the Performance page; submit a form by the id of its submit button with an in-page click that survives sticky bars and overlays
 - **Core Search** (`/search/node`) — results and no-results
 - **Core Contact** module's default "feedback" form
@@ -200,7 +204,7 @@ More runnable examples: `tests/features/*.feature` in this repo.
 
 ## Running this repo's own test suite
 
-This repository is itself a working webship-js project: its `tests/features/*.feature` files run by default against a **self-hosted Drupal core (Standard profile) instance managed by [DDEV](https://ddev.com/)**, installed with `drush site-install` and then seeded with the smallest set of fixtures the steps need: two core recipes (the Article content type and the Image media type), a second account for the users registry, and one article plus one media item. Nothing else is configured, so the suite stays honest about what a fresh Drupal core site renders, and it side-steps the flakiness of testing against a public site whose content changes over time.
+This repository is itself a working webship-js project: its `tests/features/*.feature` files run by default against a **self-hosted Drupal core (Standard profile) instance managed by [DDEV](https://ddev.com/)**, installed with `drush site-install` and then seeded with the smallest set of fixtures the steps need: three core recipes (the Article and Basic page content types and the Image media type), a second account for the users registry, and one article plus one media item. Nothing else is configured, so the suite stays honest about what a fresh Drupal core site renders, and it side-steps the flakiness of testing against a public site whose content changes over time.
 
 The self-test suite therefore covers what such an install provides:
 
@@ -209,7 +213,8 @@ The self-test suite therefore covers what such an install provides:
 | Public pages | `homepage`, `login`, `logout`, `users-registry`, `password-reset`, `breadcrumb`, `breadcrumb-text`, `local-tasks`, `images` |
 | Error pages | `error-403`, `error-404`, `anonymous-access`, `session-status` |
 | Administration | `admin-dashboard`, `admin-content`, `listing-operations`, `admin-people`, `admin-modules`, `admin-appearance`, `admin-status-report`, `site-information`, `user-profile`, `authenticated-access`, `checkbox-state`, `caches` |
-| Content authoring | `rich-text-editor`, `media-library` |
+| Content authoring | `rich-text-editor`, `rich-text-links`, `media-library`, `content-lifecycle`, `layout-builder` |
+| Site structure | `site-structure`, `access-control`, `testing-users`, `named-selectors` |
 | Infrastructure | `page-cache`, `security-headers`, `drupal-generator`, `drupal-settings`, `feeds-and-robots` |
 | Cross-cutting | `accessibility`, `responsive` |
 
@@ -228,7 +233,9 @@ ddev drush site-install standard --account-name=admin --account-pass=admin --yes
 
 # Seed the fixtures the suite relies on (idempotent, see tests/seed/standard-fixtures.php):
 ddev drush recipe core/recipes/article_content_type
+ddev drush recipe core/recipes/page_content_type
 ddev drush recipe core/recipes/image_media_type
+ddev drush pm:install layout_builder --yes
 ddev drush user:create editor --mail=editor@example.com --password=editor
 ddev drush user:role:add content_editor editor
 ddev drush user:create authenticated --mail=authenticated@example.com --password=authenticated

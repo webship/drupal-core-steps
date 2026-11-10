@@ -15,7 +15,7 @@ Feature: Users registry login
     Then I should be logged in
     And I am on the my account page
     Then I should see the page title "editor"
-    And the url should not match "/user/1"
+    And the url should not match "/user/1$"
 
   Scenario: The handle is reusable in the plural phrasing
     Given we are a logged in user with "admin"

@@ -58,7 +58,9 @@ jobs:
         working-directory: drupal
         run: |
           ddev drush recipe core/recipes/article_content_type
+          ddev drush recipe core/recipes/page_content_type
           ddev drush recipe core/recipes/image_media_type
+          ddev drush pm:install layout_builder --yes
           ddev drush user:create "$DRUPAL_EDITOR_USER" --mail="editor@example.com" --password="$DRUPAL_EDITOR_PASS"
           ddev drush user:role:add content_editor "$DRUPAL_EDITOR_USER"
           ddev drush user:create "$DRUPAL_AUTHENTICATED_USER" --mail="authenticated@example.com" --password="$DRUPAL_AUTHENTICATED_PASS"
