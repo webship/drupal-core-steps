@@ -268,6 +268,22 @@ async function loginWithForm(world, username, password) {
   await page.locator('#edit-name').first().fill(username);
   await page.locator('#edit-pass').first().fill(password);
   await submitInPage(world, '#user-login-form #edit-submit, form.user-login-form #edit-submit, #edit-submit', '#user-login-form, form.user-login-form');
+  // Report a refused login as what it is, instead of leaving the next step
+  // to fail on a page that is still the login form.
+  const error = page.locator('.messages--error, [aria-label="Error message"]').first();
+  if (await error.isVisible({ timeout: 1000 }).catch(() => false)) {
+    const text = ((await error.textContent()) || '').replace(/\s+/g, ' ').trim();
+    throw friendly({
+      message: `Logging in as "${username}" was refused.`,
+      cause: text,
+      hint: 'Check the account exists on the site under test (Given I add the testing users creates the registry accounts) and that the password in worldParameters.users is current.',
+    });
+  }
+  await waitForState(
+    page.locator('body.user-logged-in'),
+    'attached',
+    `Expected an authenticated session after logging in as "${username}" (the body carries no "user-logged-in" class)`
+  );
 }
 
 /**

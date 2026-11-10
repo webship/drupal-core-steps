@@ -6,6 +6,7 @@
   "files": [
     "tests/step-definitions/drupal-core.steps.js",
     "tests/step-definitions/drupal-defaults.js",
+    "tests/step-definitions/drupal-users.steps.js",
     "tests/step-definitions/drupal-helpers.js",
     "tests/selectors/drupal-core.json",
     "README.md",
