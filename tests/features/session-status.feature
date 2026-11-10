@@ -1,3 +1,4 @@
+@js-off
 Feature: Session-aware HTTP status
   As a test author
   I want the status of a page as the signed-in session sees it

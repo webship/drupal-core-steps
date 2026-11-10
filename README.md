@@ -190,6 +190,45 @@ And I don't see navigation sidebar
 
 The same hook points the `I attach the file "<name>" to "<field>"` steps at your project's `tests/assets/` folder when it exists (webship-js's default is its own package folder).
 
+### Lanes, tags and a Drupal cookbook
+
+The default run excludes `@wip` and `@auth-setup` scenarios. The suite's own tags, which a project can copy:
+
+| Tag | Meaning |
+| --- | --- |
+| `@critical` | the smoke lane: `CUCUMBER_TAGS=@critical npm test` |
+| `@a11y` | the accessibility audit: `CUCUMBER_TAGS=@a11y npm test` runs `accessibility.feature` and `accessibility-audit.feature` alone |
+| `@mobile` | a scenario that sets a phone breakpoint |
+| `@js-off`, `@js-warn`, `@js-fail` | how JavaScript errors are reported for that scenario; the 403 and 404 features carry `@js-off` because core's error pages log an expected error |
+| `@video`, `@no-video` | record (or never record) that scenario when `video.mode` is `tag` |
+| `@wip` | left out of every run |
+| `@auth-setup` | the scenario that saves an auth state; run on its own first |
+
+`FEATURES=tests/features/login.feature,tests/features/logout.feature npm test` runs a subset; `CUCUMBER_TAGS` sets the tag expression.
+
+Recipes that need no step of their own, with the paths a Drupal site has:
+
+```gherkin
+# A JSON:API document (core's jsonapi module).
+Given the API base URL is "https://your-drupal-site.example"
+When I send a GET request to "/jsonapi"
+Then the API response code should be 200
+And the JSON response should have property "jsonapi.version"
+
+# A sortable Views listing.
+Then the table "table.views-table" should be sorted by "Title" in "ascending" order
+
+# Keyboard order of the login form.
+Given I am on the login page
+When I press the key "Tab"
+Then the focused element should match "#edit-name"
+
+# No third-party request while a page renders.
+Given the URL "**/google-analytics.com/**" is blocked
+When I am on the homepage
+Then no request to "**/google-analytics.com/**" should have been made
+```
+
 ## Quick example
 
 ```gherkin
@@ -218,13 +257,13 @@ The self-test suite therefore covers what such an install provides:
 | Content authoring | `rich-text-editor`, `rich-text-links`, `media-library`, `content-lifecycle`, `layout-builder` |
 | Site structure | `site-structure`, `access-control`, `testing-users`, `named-selectors`, `navigation-and-forms` |
 | Infrastructure | `page-cache`, `security-headers`, `drupal-generator`, `drupal-settings`, `feeds-and-robots` |
-| Cross-cutting | `accessibility`, `responsive` |
+| Cross-cutting | `accessibility`, `accessibility-audit` (the `@a11y` lane), `responsive` |
 
 It does **not** exercise Contact or Search, nor the registration *form*: a Standard-profile install ships neither module and has self-registration disabled. The step-pack itself still supports those (see [What's covered](#whats-covered)) for use against your own site once you've enabled the relevant modules.
 
 One consequence worth knowing when writing your own scenarios: webship-js's `the response status code should be <n>` re-requests the URL over HTTP without the browser's session cookies, so it always reports what an *anonymous* visitor would get. Use it to assert 403/404, and assert on rendered markup (`I should be on an admin page`, `I should see the page title "…"`) for pages that only open once signed in — which is exactly what `anonymous-access.feature` and `authenticated-access.feature` do as a matched pair.
 
-The `drupal/` directory holds a committed `.ddev/config.yaml` for this fixture site; the Drupal codebase itself (`web/`, `vendor/`, `composer.json`) is generated fresh by `ddev composer create-project` and gitignored, so every run starts from a clean install.
+The `drupal/` directory holds a committed `.ddev/config.yaml` for this fixture site; the Drupal codebase itself (`web/`, `vendor/`, `composer.json`) is generated fresh by `ddev composer create-project` and gitignored, so every run starts from a clean install. The seed script lives at `tests/seed/standard-fixtures.php` and is copied into `drupal/seed/` before it runs.
 
 ```bash
 cd drupal
@@ -241,6 +280,7 @@ ddev drush pm:install layout_builder --yes
 ddev drush user:create editor --mail=editor@example.com --password=editor
 ddev drush user:role:add content_editor editor
 ddev drush user:create authenticated --mail=authenticated@example.com --password=authenticated
+mkdir -p seed && cp ../tests/seed/standard-fixtures.php seed/
 mkdir -p seed && cp ../tests/seed/standard-fixtures.php seed/
 ddev drush php:script seed/standard-fixtures.php
 ddev drush cache:rebuild
