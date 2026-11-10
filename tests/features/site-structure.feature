@@ -16,6 +16,9 @@ Feature: Site structure
     And the "Content editor" role should exist
     And the "Administrator" role should exist
     And the "Reviewer" role should not exist
+    And the "Article" content type should exist
+    And the "Basic page" content type should exist
+    And the "No such type" content type should not exist
 
   Scenario: The default theme settings page opens without naming the theme
     Given I am on the default theme settings page

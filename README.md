@@ -11,6 +11,8 @@ It is a **plugin for webship-js**, so it does not run standalone. It ships one f
 - **Named pages** — go to login, password reset, registration, search, contact, content creation, the current user's profile, or any of the core administration screens (`/admin`, `/admin/content`, `/admin/people`, `/admin/modules`, `/admin/appearance`, `/admin/reports/status`, site information) by name instead of by path
 - **Body classes** — front page, administration page, node type, authenticated session (`path-frontpage`, `path-admin`, `page-node-type-<type>`, `user-logged-in`)
 - **Core layout blocks** — Toolbar or Navigation admin bar, breadcrumb, local tasks (tab strip), the `h1.page-title` heading
+- **Navigation module**: `the navigation sidebar should (not) list "Content"`, `click "Content" in the navigation sidebar`, the top bar above a content item (`the top bar should offer the "Edit" action`, `open the top bar page actions`, `choose the "Edit" action in the top bar`)
+- **Node form and content moderation**: `the "Article" content type should (not) exist`, `save the content` (through the Save button a person sees, an admin theme's sticky clone included), `the "Title" field should block submission as required`, `the moderation state should (not) be "Draft"`, `change the moderation state to "Published"` (core's Content Moderation control)
 - **Status messages** — status / warning / error, with an optional expected text
 - **Named forms** — login, registration, password reset, search, contact, site information, asserted by the id Form API derives from each machine name
 - **Authentication**: log in by a user handle from the users registry (`Given I am a logged in user with the "admin" user`, verified), create or remove the registry's accounts on the site (`Given I add the testing users`, `Given I delete the testing users`), or log in with explicit credentials, log out (including core 10.3+'s logout confirmation form), make sure a session is anonymous (`Given I am not logged in`), password reset requests, authenticated-session assertions, login errors
@@ -214,7 +216,7 @@ The self-test suite therefore covers what such an install provides:
 | Error pages | `error-403`, `error-404`, `anonymous-access`, `session-status` |
 | Administration | `admin-dashboard`, `admin-content`, `listing-operations`, `admin-people`, `admin-modules`, `admin-appearance`, `admin-status-report`, `site-information`, `user-profile`, `authenticated-access`, `checkbox-state`, `caches` |
 | Content authoring | `rich-text-editor`, `rich-text-links`, `media-library`, `content-lifecycle`, `layout-builder` |
-| Site structure | `site-structure`, `access-control`, `testing-users`, `named-selectors` |
+| Site structure | `site-structure`, `access-control`, `testing-users`, `named-selectors`, `navigation-and-forms` |
 | Infrastructure | `page-cache`, `security-headers`, `drupal-generator`, `drupal-settings`, `feeds-and-robots` |
 | Cross-cutting | `accessibility`, `responsive` |
 
