@@ -273,22 +273,84 @@ async function loginWithForm(world, username, password) {
   const loginWait = Number(world.parameters && world.parameters.loginWait) || 0;
   if (loginWait > 0) await page.waitForTimeout(loginWait);
   await submitInPage(world, '#user-login-form #edit-submit, form.user-login-form #edit-submit, #edit-submit', '#user-login-form, form.user-login-form');
+  if (await waitForAuthenticated(world, 2000)) return;
   // Report a refused login as what it is, instead of leaving the next step
   // to fail on a page that is still the login form.
-  const error = page.locator('.messages--error, [aria-label="Error message"]').first();
-  if (await error.isVisible({ timeout: 1000 }).catch(() => false)) {
-    const text = ((await error.textContent()) || '').replace(/\s+/g, ' ').trim();
+  const form = page.locator('#user-login-form, form.user-login-form').first();
+  if (await form.isVisible().catch(() => false)) {
+    const error = page.locator('.form-item--error-message, .messages--error, [aria-label="Error message"]').first();
+    const shown = await error.isVisible({ timeout: 500 }).catch(() => false);
+    const text = shown ? ((await error.textContent()) || '').replace(/\s+/g, ' ').trim() : 'the login form is still shown';
     throw friendly({
       message: `Logging in as "${username}" was refused.`,
       cause: text,
       hint: 'Check the account exists on the site under test (Given I add the testing users creates the registry accounts) and that the password in worldParameters.users is current.',
     });
   }
-  await waitForState(
-    page.locator('body.user-logged-in'),
-    'attached',
-    `Expected an authenticated session after logging in as "${username}" (the body carries no "user-logged-in" class)`
-  );
+  if (await waitForAuthenticated(world, budget(world))) return;
+  throw friendly({
+    message: `Expected an authenticated session after logging in as "${username}".`,
+    cause: 'The page shows no sign of a session (the "user-logged-in" body class, drupalSettings.user.uid, a logout link) and /user/login still serves the form.',
+    hint: 'Check the account exists on the site under test (Given I add the testing users creates the registry accounts) and that the password in worldParameters.users is current.',
+  });
+}
+
+/**
+ * Whether the page in front of us belongs to an authenticated session, from
+ * what the page itself shows: core's themes put `user-logged-in` on the body,
+ * but a theme may render the body without its attributes (UIkit Admin does),
+ * so the `drupalSettings.user.uid` every page carries and the logout link of
+ * the user menu count as well.
+ *
+ * @param {import('playwright').Page} page
+ * @returns {Promise<boolean>}
+ */
+async function authenticatedOnPage(page) {
+  return page.evaluate(() => {
+    const body = document.body;
+    if (body && body.classList && body.classList.contains('user-logged-in')) return true;
+    const settings = window.drupalSettings;
+    if (settings && settings.user && Number(settings.user.uid) > 0) return true;
+    return Boolean(document.querySelector('a[href*="/user/logout"]'));
+  }).catch(() => false);
+}
+
+/**
+ * Whether the current session is authenticated. The page's own signals
+ * first; when it shows none of them, the site is asked: an authenticated
+ * visitor requesting `/user/login` is redirected to their account page
+ * (`/user/<uid>`), an anonymous one gets the login form. The request runs in
+ * the browser context, with its cookies, and never changes the page.
+ *
+ * @param {object} world - The cucumber World.
+ * @returns {Promise<boolean>}
+ */
+async function isAuthenticated(world) {
+  if (await authenticatedOnPage(world.page)) return true;
+  try {
+    const response = await world.page.request.get(joinUrl(world.launchUrl, '/user/login'), { failOnStatusCode: false });
+    return /\/user\/\d+(?:[/?#]|$)/.test(response.url());
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * Wait until the session is authenticated (or, with `expected` false, until
+ * it is anonymous), polling `isAuthenticated` every 250 ms.
+ *
+ * @param {object} world - The cucumber World.
+ * @param {number} timeout - Milliseconds to keep trying.
+ * @param {boolean} [expected=true]
+ * @returns {Promise<boolean>} Whether the expected state was reached in time.
+ */
+async function waitForAuthenticated(world, timeout, expected = true) {
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    if ((await isAuthenticated(world)) === expected) return true;
+    if (Date.now() >= deadline) return false;
+    await world.page.waitForTimeout(250);
+  }
 }
 
 /**
@@ -515,6 +577,8 @@ module.exports = {
   resolveUser,
   submitInPage,
   loginWithForm,
+  isAuthenticated,
+  waitForAuthenticated,
   robustClick,
   resolveFieldId,
   setCkeditorData,
