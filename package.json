@@ -12,6 +12,8 @@
     "tests/step-definitions/drupal-form.steps.js",
     "tests/step-definitions/drupal-layout-builder.steps.js",
     "tests/step-definitions/drupal-site.steps.js",
+    "tests/step-definitions/drupal-content-forms.steps.js",
+    "tests/step-definitions/drupal-navigation.steps.js",
     "tests/selectors/drupal-core.json",
     "README.md",
     "LICENSE"
