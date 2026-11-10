@@ -75,6 +75,11 @@ module.exports = {
         },
       },
 
+      // A site that protects its login form with Honeypot refuses a form sent
+      // within its time limit (2 seconds by default): hold the login submit
+      // back for that long. Milliseconds; 0 on a site without Honeypot.
+      loginWait: parseInt(process.env.DRUPAL_LOGIN_WAIT || '0', 10),
+
       // How long a page gets to settle after a navigation (milliseconds); the
       // hooks' values are extra waits around scenarios and steps.
       minWaitTime: {
