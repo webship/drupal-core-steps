@@ -58,6 +58,7 @@ const {
   checkboxStateByLabel,
   checkboxStateByHandle,
   sessionStatus,
+  currentNodeId,
 } = require('./drupal-helpers');
 
 // ---------------------------------------------------------------------------
@@ -1412,24 +1413,7 @@ Then(/^(?:the )?content(?: item)? should( not)* be (published|unpublished)$/, as
  *
  */
 When(/^(I |we )*delete the (?:content item|node) (?:I am|we are) viewing$/, async function (pronounCase) {
-  const nid = await this.page.evaluate(() => {
-    // Core's settings payload names the current route's system path on every
-    // page, whatever the theme renders; the body class, shortlink and node
-    // links are the fallbacks.
-    const settings = window.drupalSettings && window.drupalSettings.path;
-    const fromPath = settings && typeof settings.currentPath === 'string' && (settings.currentPath.match(/^node\/(\d+)$/) || [])[1];
-    if (fromPath) return fromPath;
-    const fromBody = (document.body.className.match(/page-node-(\d+)/) || [])[1];
-    if (fromBody) return fromBody;
-    const fromShortlink = document.querySelector('link[rel="shortlink"][href*="/node/"]');
-    const fromLink = fromShortlink && (fromShortlink.getAttribute('href').match(/\/node\/(\d+)/) || [])[1];
-    if (fromLink) return fromLink;
-    for (const a of document.querySelectorAll('a[href*="/node/"]')) {
-      const match = (a.getAttribute('href') || '').match(/\/node\/(\d+)(\/|$|\?)/);
-      if (match) return match[1];
-    }
-    return null;
-  });
+  const nid = await currentNodeId(this.page);
   if (!nid) {
     throw friendly({
       message: 'Could not determine which content item is being viewed.',
