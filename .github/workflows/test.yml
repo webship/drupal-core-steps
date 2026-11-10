@@ -15,6 +15,8 @@ env:
   DRUPAL_ADMIN_PASS: admin
   DRUPAL_EDITOR_USER: editor
   DRUPAL_EDITOR_PASS: editor
+  DRUPAL_AUTHENTICATED_USER: authenticated
+  DRUPAL_AUTHENTICATED_PASS: authenticated
 
 jobs:
   cucumber:
@@ -59,6 +61,7 @@ jobs:
           ddev drush recipe core/recipes/image_media_type
           ddev drush user:create "$DRUPAL_EDITOR_USER" --mail="editor@example.com" --password="$DRUPAL_EDITOR_PASS"
           ddev drush user:role:add content_editor "$DRUPAL_EDITOR_USER"
+          ddev drush user:create "$DRUPAL_AUTHENTICATED_USER" --mail="authenticated@example.com" --password="$DRUPAL_AUTHENTICATED_PASS"
           mkdir -p seed && cp ../tests/seed/standard-fixtures.php seed/
           ddev drush php:script seed/standard-fixtures.php
           ddev drush cache:rebuild

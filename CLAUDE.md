@@ -42,6 +42,7 @@ ddev drush recipe core/recipes/article_content_type
 ddev drush recipe core/recipes/image_media_type
 ddev drush user:create editor --mail=editor@example.com --password=editor
 ddev drush user:role:add content_editor editor
+ddev drush user:create authenticated --mail=authenticated@example.com --password=authenticated
 ddev drush php:script seed/standard-fixtures.php
 ddev drush cache:rebuild
 cd ..
