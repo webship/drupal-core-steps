@@ -152,12 +152,22 @@ Given(/^(I |we )*add (?:the )?testing users$/, async function (pronounCase) {
     const notify = this.page.locator('#edit-notify').first();
     if ((await notify.count()) && (await notify.isChecked())) await robustClick(notify);
     await submitInPage(this, '#user-register-form #edit-submit, form.user-register-form #edit-submit, form.user-form #edit-submit, #edit-submit', '#user-register-form, form.user-register-form, form.user-form');
-    const error = this.page.locator('.messages--error, [aria-label="Error message"]').first();
-    if (await error.isVisible({ timeout: 1000 }).catch(() => false)) {
-      const text = ((await error.textContent()) || '').replace(/\s+/g, ' ').trim();
+    // Judge the creation by the form, not by the messages on the page: an
+    // unrelated error (the Update module's security notice, for one) sits on
+    // every administration page of a site that is behind on updates. The Add
+    // user form is gone once the account exists; when it is still shown, the
+    // account is looked up before the step fails with the form's own messages.
+    const form = this.page.locator('#user-register-form, form.user-register-form').first();
+    if ((await form.isVisible().catch(() => false)) && !(await findUid(this, user.username))) {
+      const texts = [];
+      for (const item of await this.page.locator('.form-item--error-message, .messages--error, [aria-label="Error message"]').all()) {
+        const text = ((await item.textContent()) || '').replace(/\s+/g, ' ').trim();
+        if (text && !texts.includes(text)) texts.push(text);
+      }
       throw friendly({
         message: `Creating the "${user.handle}" user failed.`,
-        cause: text,
+        cause: texts.join(' | ') || 'The Add user form is still shown and the account does not exist.',
+        hint: 'Check the email address and the roles of the entry in worldParameters.users; the site reports what it refused.',
       });
     }
     created.push(user.username);

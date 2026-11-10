@@ -59,6 +59,7 @@ const {
   checkboxStateByHandle,
   sessionStatus,
   currentNodeId,
+  waitForAuthenticated,
 } = require('./drupal-helpers');
 
 // ---------------------------------------------------------------------------
@@ -665,9 +666,11 @@ When(/^(I |we )*(?:log in|sign in) as "([^"]*)?" with password "([^"]*)?"$/, asy
 });
 
 /**
- * Assert the session is, or is not, authenticated, via the `user-logged-in`
- * body class. The negative form is what confirms a logout actually destroyed
- * the session rather than merely redirecting.
+ * Assert the session is, or is not, authenticated: the `user-logged-in` body
+ * class, `drupalSettings.user.uid` or a logout link on the page, and when a
+ * theme shows none of them, the site's own answer (an authenticated visitor is
+ * redirected away from `/user/login`). The negative form is what confirms a
+ * logout actually destroyed the session rather than merely redirecting.
  *
  * Example #1: Then I should be logged in
  * Example #2: And we should be signed in
@@ -677,12 +680,17 @@ When(/^(I |we )*(?:log in|sign in) as "([^"]*)?" with password "([^"]*)?"$/, asy
  *
  */
 Then(/^(I |we )*should( not)* be (?:logged in|signed in|authenticated)$/, async function (pronounCase, notCase) {
-  await assertPresence(
-    this.page.locator('body.user-logged-in'),
-    notCase,
-    'the authenticated-user body class ("body.user-logged-in")',
-    { attached: true }
-  );
+  const expected = !notCase;
+  if (await waitForAuthenticated(this, budget(this), expected)) return;
+  throw friendly({
+    message: expected ? 'Expected an authenticated session.' : 'Expected an anonymous session.',
+    cause: expected
+      ? 'The page shows no sign of a session (the "user-logged-in" body class, drupalSettings.user.uid, a logout link) and /user/login still serves the form.'
+      : 'The page still shows a session (the "user-logged-in" body class, drupalSettings.user.uid or a logout link), or /user/login redirects to an account page.',
+    hint: expected
+      ? 'Log in first (Given I am a logged in user with the "<handle>" user).'
+      : 'Log out first (When I log out), or start the scenario anonymous (Given I am not logged in).',
+  });
 });
 
 /**
