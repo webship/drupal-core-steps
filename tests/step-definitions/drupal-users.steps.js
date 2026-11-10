@@ -106,6 +106,45 @@ async function ensureAdminSession(world) {
 }
 
 /**
+ * The uid of `username` in the HTML of a People listing page, or null.
+ *
+ * The name column prints the display name through core's username template,
+ * which cuts a name longer than 20 characters down to 15 with an ellipsis, so
+ * a long name is matched through the "Edit <name>" / "View <name>" label of
+ * the row's operations links, and last through the truncated text itself.
+ *
+ * @param {string} html
+ * @param {string} username
+ * @returns {string|null}
+ */
+function uidFromPeopleHtml(html, username) {
+  const decode = (text) => text
+    .replace(/<[^>]+>/g, '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0*39;/g, "'")
+    .replace(/&hellip;/g, '…')
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const anchors = [];
+  for (const found of html.matchAll(/<a\b([^>]*)href="[^"]*\/user\/(\d+)[^"]*"([^>]*)>([\s\S]*?)<\/a>/g)) {
+    const label = `${found[1]} ${found[3]}`.match(/aria-label="([^"]*)"/);
+    anchors.push({ uid: found[2], text: decode(found[4]), label: label ? decode(label[1]) : '' });
+  }
+  const exact = anchors.find((anchor) => anchor.text === username);
+  if (exact) return exact.uid;
+  const labelled = anchors.find((anchor) => anchor.label === `Edit ${username}` || anchor.label === `View ${username}`);
+  if (labelled) return labelled.uid;
+  if ([...username].length > 20) {
+    const truncated = anchors.find((anchor) => anchor.text.endsWith('…') && [...anchor.text].length > 10 && username.startsWith(anchor.text.slice(0, -1)));
+    if (truncated) return truncated.uid;
+  }
+  return null;
+}
+
+/**
  * The uid of an existing account, found through the People listing's name
  * filter, or null.
  *
@@ -123,10 +162,7 @@ async function findUid(world, username) {
       hint: 'The testing users are managed by an account that may administer users; log in as the administrator first.',
     });
   }
-  const html = await response.text();
-  const escaped = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = html.match(new RegExp(`<a[^>]*href="[^"]*/user/(\\d+)[^"]*"[^>]*>\\s*${escaped}\\s*</a>`));
-  return match ? match[1] : null;
+  return uidFromPeopleHtml(await response.text(), username);
 }
 
 /**
@@ -240,4 +276,4 @@ Given(/^(I |we )*delete (?:the )?testing users$/, async function (pronounCase) {
   this.attach(`testing users: removed ${removed.length ? removed.join(', ') : 'none'}`);
 });
 
-module.exports = { provisionableUsers, adminHandle };
+module.exports = { provisionableUsers, adminHandle, uidFromPeopleHtml };

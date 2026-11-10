@@ -67,6 +67,14 @@ module.exports = {
           email: process.env.DRUPAL_AUTHENTICATED_MAIL || 'authenticated@example.com',
           roles: [],
         },
+        // A name longer than 20 characters: the People listing prints it
+        // truncated, which the lookup behind "I add the testing users" handles.
+        reviewer: {
+          username: process.env.DRUPAL_REVIEWER_USER || 'reviewer_with_a_long_name',
+          password: process.env.DRUPAL_REVIEWER_PASS || 'reviewer',
+          email: process.env.DRUPAL_REVIEWER_MAIL || 'reviewer@example.com',
+          roles: ['content_editor'],
+        },
         // Not an account: the name and email an anonymous visitor types into
         // forms that ask for them (the contact form).
         anonymous: {

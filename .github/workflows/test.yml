@@ -17,6 +17,8 @@ env:
   DRUPAL_EDITOR_PASS: editor
   DRUPAL_AUTHENTICATED_USER: authenticated
   DRUPAL_AUTHENTICATED_PASS: authenticated
+  DRUPAL_REVIEWER_USER: reviewer_with_a_long_name
+  DRUPAL_REVIEWER_PASS: reviewer
 
 jobs:
   cucumber:

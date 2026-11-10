@@ -19,6 +19,7 @@ Feature: Testing users
     Then I should see "editor" in the "editor" row
     And I should see "Content editor" in the "editor" row
     And I should see "authenticated" in the "authenticated" row
+    And I should see "Content editor" in the "reviewer_with_" row
 
   Scenario: Every registry handle logs in once the users exist
     Given I add the testing users
@@ -27,6 +28,8 @@ Feature: Testing users
     Given I am a logged in user with the "authenticated" user
     Then I should be logged in
     And I should not see the navigation sidebar
+    Given I am a logged in user with the "reviewer" user
+    Then I should be logged in
 
   Scenario: A login that the site refuses is reported as such
     Given I am on the login page
