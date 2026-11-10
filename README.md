@@ -90,6 +90,7 @@ worldParameters: {
     admin:         { username: process.env.DRUPAL_ADMIN_USER || 'admin',  password: process.env.DRUPAL_ADMIN_PASS || 'admin',  email: process.env.DRUPAL_ADMIN_MAIL || 'admin@example.com', isAdmin: true },
     editor:        { username: process.env.DRUPAL_EDITOR_USER || 'editor', password: process.env.DRUPAL_EDITOR_PASS || 'editor', email: process.env.DRUPAL_EDITOR_MAIL || 'editor@example.com', roles: ['content_editor'] },
     authenticated: { username: process.env.DRUPAL_AUTHENTICATED_USER || 'authenticated', password: process.env.DRUPAL_AUTHENTICATED_PASS || 'authenticated', email: process.env.DRUPAL_AUTHENTICATED_MAIL || 'authenticated@example.com', roles: [] },
+    reviewer:      { username: process.env.DRUPAL_REVIEWER_USER || 'reviewer_with_a_long_name', password: process.env.DRUPAL_REVIEWER_PASS || 'reviewer', email: process.env.DRUPAL_REVIEWER_MAIL || 'reviewer@example.com', roles: ['content_editor'] },
     // Not an account: what an anonymous visitor types into the contact form.
     anonymous:     { name: process.env.DRUPAL_ANONYMOUS_NAME || 'Webship QA', email: process.env.DRUPAL_ANONYMOUS_EMAIL || 'qa@example.com' },
   },
@@ -136,6 +137,7 @@ Feature files never carry credentials. The `users` registry maps the handle a sc
 | `DRUPAL_ADMIN_USER` / `DRUPAL_ADMIN_PASS` / `DRUPAL_ADMIN_MAIL` | `admin` / `admin` / `admin@example.com` | the `admin` handle |
 | `DRUPAL_EDITOR_USER` / `DRUPAL_EDITOR_PASS` / `DRUPAL_EDITOR_MAIL` | `editor` / `editor` / `editor@example.com` | the `editor` handle |
 | `DRUPAL_AUTHENTICATED_USER` / `DRUPAL_AUTHENTICATED_PASS` / `DRUPAL_AUTHENTICATED_MAIL` | `authenticated` / `authenticated` / `authenticated@example.com` | the `authenticated` handle |
+| `DRUPAL_REVIEWER_USER` / `DRUPAL_REVIEWER_PASS` / `DRUPAL_REVIEWER_MAIL` | `reviewer_with_a_long_name` / `reviewer` / `reviewer@example.com` | the `reviewer` handle, a name longer than 20 characters (the People listing truncates it) |
 | `DRUPAL_ANONYMOUS_NAME` / `DRUPAL_ANONYMOUS_EMAIL` | `Webship QA` / `qa@example.com` | the contact form of an anonymous visitor |
 | `DRUPAL_LOGIN_WAIT` | `0` | milliseconds the login by handle waits before it submits, for a login form protected by Honeypot (its default time limit is 2 seconds: use `3000`) |
 | `WEBSHIP_STEP_TIMEOUT` | `45000` | the step timeout (a `timeout` key in cucumber.js is ignored: webship-js sets it when it loads) |
