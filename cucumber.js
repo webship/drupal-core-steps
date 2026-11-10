@@ -47,20 +47,25 @@ module.exports = {
       // that prove a plain login does not reach the back end.
       // ---------------------------------------------------------------------
       users: {
+        // The installer's account; "I add the testing users" never creates it.
         admin: {
           username: process.env.DRUPAL_ADMIN_USER || 'admin',
           password: process.env.DRUPAL_ADMIN_PASS || 'admin',
           email: process.env.DRUPAL_ADMIN_MAIL || 'admin@example.com',
+          isAdmin: true,
         },
+        // Accounts "I add the testing users" creates with these roles.
         editor: {
           username: process.env.DRUPAL_EDITOR_USER || 'editor',
           password: process.env.DRUPAL_EDITOR_PASS || 'editor',
           email: process.env.DRUPAL_EDITOR_MAIL || 'editor@example.com',
+          roles: ['content_editor'],
         },
         authenticated: {
           username: process.env.DRUPAL_AUTHENTICATED_USER || 'authenticated',
           password: process.env.DRUPAL_AUTHENTICATED_PASS || 'authenticated',
           email: process.env.DRUPAL_AUTHENTICATED_MAIL || 'authenticated@example.com',
+          roles: [],
         },
         // Not an account: the name and email an anonymous visitor types into
         // forms that ask for them (the contact form).

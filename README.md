@@ -13,7 +13,7 @@ It is a **plugin for webship-js**, so it does not run standalone. It ships one f
 - **Core layout blocks** — Toolbar or Navigation admin bar, breadcrumb, local tasks (tab strip), the `h1.page-title` heading
 - **Status messages** — status / warning / error, with an optional expected text
 - **Named forms** — login, registration, password reset, search, contact, site information, asserted by the id Form API derives from each machine name
-- **Authentication**: log in by a user handle from the users registry (`Given I am a logged in user with the "admin" user`), or with explicit credentials, log out (including core 10.3+'s logout confirmation form), make sure a session is anonymous (`Given I am not logged in`), password reset requests, authenticated-session assertions, login errors
+- **Authentication**: log in by a user handle from the users registry (`Given I am a logged in user with the "admin" user`, verified), create or remove the registry's accounts on the site (`Given I add the testing users`, `Given I delete the testing users`), or log in with explicit credentials, log out (including core 10.3+'s logout confirmation form), make sure a session is anonymous (`Given I am not logged in`), password reset requests, authenticated-session assertions, login errors
 - **Session-aware HTTP status**: `the page should return HTTP status 403` re-requests the current page with the browser's own cookies, so it answers for the signed-in user (webship-js's status step answers for an anonymous visitor)
 - **Listings and operations**: assert a row of an administration listing offers (or hides) an operation such as "Edit" or "Delete", and follow an operation link of a row; combine with webship-js's `I should see "…" in the "…" row` and `I click "…" in the "…" row`
 - **Breadcrumb text**: `"Home" should be in the breadcrumb`, `the breadcrumb should not contain "…"`
@@ -80,9 +80,9 @@ worldParameters: {
 
   // The accounts `Given I am a logged in user with the "<handle>" user` logs in as.
   users: {
-    admin:         { username: process.env.DRUPAL_ADMIN_USER || 'admin',  password: process.env.DRUPAL_ADMIN_PASS || 'admin',  email: process.env.DRUPAL_ADMIN_MAIL || 'admin@example.com' },
-    editor:        { username: process.env.DRUPAL_EDITOR_USER || 'editor', password: process.env.DRUPAL_EDITOR_PASS || 'editor', email: process.env.DRUPAL_EDITOR_MAIL || 'editor@example.com' },
-    authenticated: { username: process.env.DRUPAL_AUTHENTICATED_USER || 'authenticated', password: process.env.DRUPAL_AUTHENTICATED_PASS || 'authenticated', email: process.env.DRUPAL_AUTHENTICATED_MAIL || 'authenticated@example.com' },
+    admin:         { username: process.env.DRUPAL_ADMIN_USER || 'admin',  password: process.env.DRUPAL_ADMIN_PASS || 'admin',  email: process.env.DRUPAL_ADMIN_MAIL || 'admin@example.com', isAdmin: true },
+    editor:        { username: process.env.DRUPAL_EDITOR_USER || 'editor', password: process.env.DRUPAL_EDITOR_PASS || 'editor', email: process.env.DRUPAL_EDITOR_MAIL || 'editor@example.com', roles: ['content_editor'] },
+    authenticated: { username: process.env.DRUPAL_AUTHENTICATED_USER || 'authenticated', password: process.env.DRUPAL_AUTHENTICATED_PASS || 'authenticated', email: process.env.DRUPAL_AUTHENTICATED_MAIL || 'authenticated@example.com', roles: [] },
     // Not an account: what an anonymous visitor types into the contact form.
     anonymous:     { name: process.env.DRUPAL_ANONYMOUS_NAME || 'Webship QA', email: process.env.DRUPAL_ANONYMOUS_EMAIL || 'qa@example.com' },
   },
@@ -130,6 +130,14 @@ Feature files never carry credentials. The `users` registry maps the handle a sc
 | `HEADLESS` / `SLOW_MO` | `true` / `300` (`800` when headed) | `playwright.config.ts`; `npm run test:headed` sets `HEADLESS=false` |
 | `WEBSHIP_VIDEO`, `WEBSHIP_JS_ERROR_MODE`, `WEBSHIP_SCREENSHOT_*`, `WEBSHIP_SELECTORS_*` | see the block above | webship-js's own switches |
 
+The accounts do not have to exist before the suite runs:
+
+```gherkin
+Given I add the testing users
+```
+
+creates every registry account that is missing through `/admin/people/create`, with its email, password and the `roles` it lists (role machine names, as `/admin/people/roles` shows them), and leaves existing accounts alone, so it is safe at the start of every run; `isAdmin: true` marks the installer's account, which is never created or removed. `Given I delete the testing users` removes them again through the cancel form. Both log in as the administrator handle when the session may not administer users, and stay logged in as it.
+
 Then log in by handle:
 
 ```gherkin
@@ -138,7 +146,7 @@ Given I am a logged in user with the username "editor"
 Given we are a logged in user with "admin"
 ```
 
-The step opens `/user/login`, fills `#edit-name` and `#edit-pass` and submits by dispatching the submit button's click inside the page with the navigation wait armed in the same `Promise.all`, then settles the landing page. The in-page submit is what keeps the login reliable when a sticky bar, a chat widget or a cookie banner covers the button and a pointer click would wait on it forever. The explicit `When I log in as "admin" with password "admin"` step (after `Given I am on the login page`) is still there for the one case where the credentials are the point of the scenario, such as a wrong password in `login.feature`; every other feature in this repo logs in by handle.
+The step opens `/user/login`, fills `#edit-name` and `#edit-pass` and submits by dispatching the submit button's click inside the page with the navigation wait armed in the same `Promise.all`, then settles the landing page and verifies the outcome: a refused login fails right there with the site's own message ("Unrecognized username or password.") and a hint, instead of leaving the next step to fail on a page that is still the login form. The in-page submit is what keeps the login reliable when a sticky bar, a chat widget or a cookie banner covers the button and a pointer click would wait on it forever. The explicit `When I log in as "admin" with password "admin"` step (after `Given I am on the login page`) is still there for the one case where the credentials are the point of the scenario, such as a wrong password in `login.feature`; every other feature in this repo logs in by handle.
 
 The counterpart for the anonymous half of an access scenario is:
 
