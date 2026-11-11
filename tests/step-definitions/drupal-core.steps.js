@@ -811,7 +811,7 @@ Then(/^(I |we )*should( not)* see (no )?search results$/, async function (pronou
  * Example #5: When we submit the contact form with subject "General" and message "Just saying hi"
  *
  */
-When(/^(I |we )*submit the contact form with subject "([^"]*)?" and message "([^"]*)?"$/, async function (pronounCase, subject, message) {
+When(/^(I |we )*submit the contact form with subject "([^"]*)" and message "([^"]*)"$/, async function (pronounCase, subject, message) {
   const defaultTime = this.minWaitTime.page || 3000;
   const anonymous = ((this.parameters && this.parameters.users) || {}).anonymous || {};
   const nameField = this.page.locator('#edit-name');
