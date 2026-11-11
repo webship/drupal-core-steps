@@ -1,7 +1,7 @@
 {
   "name": "@webship-js/drupal-core-steps",
   "version": "2.1.3",
-  "description": "Drupal-core-specific Cucumber step definitions plugin for webship-js — BDD testing for the main pages of any Drupal core site (Playwright + Cucumber).",
+  "description": "Drupal-core-specific Cucumber step definitions plugin for webship-js \u2014 BDD testing for the main pages of any Drupal core site (Playwright + Cucumber).",
   "main": "tests/step-definitions/drupal-core.steps.js",
   "files": [
     "tests/step-definitions/drupal-core.steps.js",
@@ -16,7 +16,8 @@
     "tests/step-definitions/drupal-navigation.steps.js",
     "tests/selectors/drupal-core.json",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "tests/features"
   ],
   "scripts": {
     "test": "cucumber-js --config cucumber.js",
