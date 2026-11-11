@@ -137,3 +137,28 @@ if ($article_display && method_exists($article_display, 'enableLayoutBuilder') &
 }
 
 print "Fixtures are in place.\n";
+
+// The core Contact module's site-wide "feedback" form, open to visitors, for the
+// contact-form feature: the Standard profile of core 11.4 no longer ships it.
+\Drupal::service('module_installer')->install(['contact']);
+$feedback = \Drupal\contact\Entity\ContactForm::load('feedback');
+if (!$feedback) {
+  $feedback = \Drupal\contact\Entity\ContactForm::create([
+    'id' => 'feedback',
+    'label' => 'Website feedback',
+    'recipients' => ['admin@example.com'],
+    'reply' => '',
+    'weight' => 0,
+  ]);
+  echo "contact form: feedback created\n";
+}
+// Without this text the form sends the mail and says nothing: no message means no
+// session for the visitor, and the cached front page comes back silent.
+if (!$feedback->getMessage()) {
+  $feedback->setMessage('Your message has been sent.');
+}
+$feedback->save();
+\Drupal::configFactory()->getEditable('contact.settings')->set('default_form', 'feedback')->save();
+foreach (['anonymous', 'authenticated'] as $role) {
+  user_role_grant_permissions($role, ['access site-wide contact form']);
+}
