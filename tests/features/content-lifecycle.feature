@@ -22,6 +22,18 @@ Feature: Content lifecycle
     And I delete the content item I created
     Then I should see a status message "has been deleted."
 
+  Scenario: A page saved through the form is the content item the scenario created
+    Given I am a logged in user with the "admin" user
+    And I am on "/node/add/page"
+    When I fill in "Title" with "Saved page"
+    And I save the content
+    Then I should see a status message "has been created."
+    When I am on the homepage
+    And I view the content item I created
+    Then I should see the page title "Saved page"
+    When I delete the content item I created
+    Then I should see a status message "has been deleted."
+
   Scenario: The content type form keeps its settings behind vertical tabs
     Given I am a logged in user with the "admin" user
     And I am on "/admin/structure/types/manage/article"

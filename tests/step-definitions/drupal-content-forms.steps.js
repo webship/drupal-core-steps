@@ -13,6 +13,7 @@ const {
   joinUrl,
   waitForState,
   submitInPage,
+  currentNodeId,
 } = require('./drupal-helpers');
 
 const SELECTORS = {
@@ -66,7 +67,8 @@ Then(/^the "([^"]*)" content type should( not)* exist$/, async function (label, 
  * such as Gin clones the form's Save into a sticky action bar on top of the
  * original, so the sticky clone is submitted when present, the plain
  * `#edit-submit` otherwise, both through an in-page click that waits for the
- * navigation.
+ * navigation. The saved node becomes "the content item I created" for the
+ * steps that view, edit or delete it.
  *
  * Example #1: When I save the content
  * Example #2: And I save the content
@@ -83,6 +85,10 @@ When(/^(I |we )*save the (?:content|content item|node)$/, async function (pronou
       hint: 'Open a content add or edit form first; the step submits the sticky "Save" clone or the form\'s own "#edit-submit".',
     });
   }
+  // A saved node is "the content item I created" for the steps that come back
+  // to it, the same as after "I create a ... content item titled ...".
+  const nid = await currentNodeId(this.page);
+  if (nid) this._drupalCreated = { nid, url: this.page.url() };
 });
 
 /**
