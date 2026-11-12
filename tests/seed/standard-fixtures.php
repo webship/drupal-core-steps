@@ -158,7 +158,12 @@ if (!$feedback->getMessage()) {
   $feedback->setMessage('Your message has been sent.');
 }
 $feedback->save();
-\Drupal::configFactory()->getEditable('contact.settings')->set('default_form', 'feedback')->save();
+// The flood limit (5 messages an hour by default) would refuse the suite on
+// its second run of the hour against the same site.
+\Drupal::configFactory()->getEditable('contact.settings')
+  ->set('default_form', 'feedback')
+  ->set('flood.limit', 1000)
+  ->save();
 foreach (['anonymous', 'authenticated'] as $role) {
   user_role_grant_permissions($role, ['access site-wide contact form']);
 }

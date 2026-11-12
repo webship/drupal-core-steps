@@ -75,9 +75,15 @@ jobs:
           ddev drush recipe core/recipes/page_content_type
           ddev drush recipe core/recipes/image_media_type
           ddev drush pm:install layout_builder --yes
+          # The Search module with the node search page, open to everyone.
+          ddev drush pm:install search search_node --yes
+          ddev drush role:perm:add anonymous 'search content'
+          ddev drush role:perm:add authenticated 'search content'
           mkdir -p seed && cp ../tests/seed/standard-fixtures.php seed/
           ddev drush php:script seed/standard-fixtures.php
           ddev drush cache:rebuild
+          # Index the content for the search feature.
+          ddev drush cron
 
       - name: Wait for the site to answer over its DDEV URL
         run: |

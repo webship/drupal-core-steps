@@ -1,37 +1,33 @@
 'use strict';
 
-// Step definitions for the markup a Drupal *core* installation renders on its
-// own — regardless of which theme or distribution sits on top of it — because
-// they target conventions that come from core's preprocess functions, Form API
-// and core module templates rather than from theme templates:
+// Step definitions for what a Drupal core site renders, whichever theme or
+// distribution sits on top of it. The steps read, in this order:
 //
-//   - body classes `template_preprocess_html()` always adds
-//     (`path-frontpage`, `path-admin`, `page-node-type-<type>`, `user-logged-in`)
-//   - the Toolbar module's `#toolbar-administration` bar and the Navigation
-//     module's `#admin-toolbar` sidebar
-//   - the System module's `.breadcrumb` block, the `.tabs` local-tasks block and
-//     the `.messages--status` / `.messages--warning` / `.messages--error` markup
-//   - Form API element ids, derived deterministically from field machine names
-//     (`#edit-name`, `#edit-pass`, `#edit-submit`, ...) and therefore identical
-//     on Olivero, Claro, Stable9 or any custom base theme
-//   - the `h1.page-title` the page-title block renders, and the
-//     `drupal-settings-json` script tag core's asset pipeline emits
-//   - the Views module's `.view-empty` "no results" region
-//   - the Search module's `.search-results` listing and the Contact module's
-//     default "feedback" form
-//   - the `Generator` meta tag / `X-Generator` header, and the
-//     `X-Drupal-Cache` / `X-Drupal-Dynamic-Cache` page-cache headers
+//   1. what core's modules state regardless of the theme: the settings
+//      payload (`drupalSettings.path.isFront`, `currentPathIsAdmin`,
+//      `user.uid`), ARIA roles and labels (`aria-label="Status message"`, the
+//      breadcrumb landmark), `data-drupal-*` attributes
+//      (`data-drupal-messages`, `data-drupal-selector`), the element ids Form
+//      API derives from machine names (`#edit-name`, `#edit-submit`), the
+//      Toolbar module's `#toolbar-administration` and the Navigation module's
+//      `#admin-toolbar`, the `Generator` meta tag, the `X-Drupal-Cache`
+//      headers and the HTTP answer of the site;
+//   2. the class names core's own themes print (`body.path-frontpage`,
+//      `.messages--status`, `h1.page-title`, `.node--unpublished`), as a
+//      fallback;
+//   3. a named selector of `tests/selectors/drupal-core.json`, which a project
+//      overrides in `worldParameters.selectors` when its theme prints
+//      something else.
 //
 // No step phrase carries the name of the CMS ("the login form", "the front
 // page", "the site generator"); only these comments name it, to document
-// which convention each step targets. A scenario passes the name as an
+// which convention each step relies on. A scenario passes the name as an
 // argument where it is the point: the site generator should be "Drupal 11".
 //
-// Composes with webship-js's built-in steps (navigation, assertion, form,
-// response, accessibility, ...) rather than duplicating them. Anything the core
-// pack already covers — "the response status code should be 200", "I should be
-// on the homepage", "I should see a ".foo" element" — belongs in the feature
-// file as a core step, not here.
+// The steps build on webship-js's own (navigation, assertion, form,
+// response, accessibility) and do not repeat them: "the response status code
+// should be 200", "I should be on the homepage" and "I should see a ".foo"
+// element" are webship-js steps and belong in the feature file as such.
 
 const { Given, When, Then, Before } = require('@cucumber/cucumber');
 const assert = require('assert');
@@ -58,6 +54,7 @@ const {
   assertContainsText,
   resolveUser,
   submitInPage,
+  failIfSubmitBlocked,
   loginWithForm,
   robustClick,
   setCkeditorData,
@@ -119,7 +116,7 @@ function canonicalName(phrase) {
 
 // Core's own paths for the pages these steps name. Every one of them is a route
 // core itself defines, so they resolve on any install that has the owning
-// module enabled — no path aliases, no site-specific menu links.
+// module enabled: no path alias and no site-specific menu link is involved.
 const ROUTES = {
   login: '/user/login',
   registration: '/user/register',
@@ -155,11 +152,11 @@ const FORMS = {
     fields: ['#edit-name'],
   },
   contact: {
-    selector: '#contact-message-feedback-form, form.contact-message-feedback-form',
+    selector: 'form[data-drupal-selector^="contact-message-"], #contact-message-feedback-form, form.contact-message-feedback-form',
     fields: [],
   },
   search: {
-    selector: '#search-form, form.search-form, #search-block-form',
+    selector: 'form[data-drupal-selector="search-form"], #search-form, form.search-form, #search-block-form',
     fields: [],
   },
   siteinfo: {
@@ -188,12 +185,79 @@ const CACHE_HEADERS = {
 };
 
 // ---------------------------------------------------------------------------
+// What a site may lack
+//
+// The steps for content types, the contact form and the search page need
+// things a Drupal site does not always have: the Standard profile of Drupal
+// 11.4 installs no content type, no Contact and no Search, and Drupal 12
+// moved Contact and Search out of core. When a step meets such a site it says
+// so, with what the site's build has to provide.
+// ---------------------------------------------------------------------------
+
+const SITE_HINTS = {
+  contentType: 'A site has only the content types its build created: the Standard profile of Drupal 11.4 and of Drupal 12 installs none ("Article" and "Basic page" come from the core recipes article_content_type and page_content_type on Drupal 11, and from the site\'s own configuration on Drupal 12). Pass the machine name of a type listed at /admin/structure/types.',
+  contact: 'The contact form needs the Contact module and a contact form: the Standard profile of Drupal 11.4 does not install the module, and Drupal 12 moved it out of core (the "contact" project provides it). Install it and create the form in the site\'s build, or pass the path of the form the site uses.',
+  search: 'The search page needs the Search module: the Standard profile of Drupal 11.4 does not install it, and Drupal 12 moved it out of core (the "search" project provides it). Install it in the site\'s build and index the content (cron).',
+};
+
+/**
+ * Explain why a form a step needs is not on the page, from the answer the
+ * current session gets for the path: a 404 means the site lacks the thing
+ * (the hint says what provides it), a 403 that the session may not use it.
+ * Returns null when the path answers normally.
+ *
+ * @param {object} world - The cucumber World.
+ * @param {string} path - The path the form lives at.
+ * @param {string} what - The thing, for the message ('an "article" content type').
+ * @param {string} hint - One of SITE_HINTS.
+ * @returns {Promise<Error|null>}
+ */
+async function explainMissing(world, path, what, hint) {
+  const status = await sessionStatus(world.page, joinUrl(world.launchUrl, path)).catch(() => 0);
+  if (status === 404) {
+    return friendly({ message: `The site has no ${what}.`, cause: `${path} answered 404`, hint });
+  }
+  if (status === 403) {
+    return friendly({
+      message: `The current session may not use ${what}.`,
+      cause: `${path} answered 403`,
+      hint: 'Log in as a user whose role has the permission the page needs.',
+    });
+  }
+  return null;
+}
+
+/**
+ * Wait for the node add form of a content type and return its title field,
+ * or fail saying that the site has no such type, or that the session may
+ * not create content of it.
+ *
+ * @param {object} world - The cucumber World.
+ * @param {string} contentType - Machine name.
+ * @returns {Promise<import('playwright').Locator>}
+ */
+async function nodeAddForm(world, contentType) {
+  const titleField = world.page.locator('#edit-title-0-value').first();
+  const there = await titleField.waitFor({ state: 'visible', timeout: budget(world) + 2000 }).then(() => true).catch(() => false);
+  if (!there) {
+    const problem = await explainMissing(world, `/node/add/${contentType}`, `"${contentType}" content type`, SITE_HINTS.contentType);
+    if (problem) throw problem;
+    await waitForState(
+      titleField,
+      'visible',
+      `Expected the node form's title field ("#edit-title-0-value") on /node/add/${contentType}`
+    );
+  }
+  return titleField;
+}
+
+// ---------------------------------------------------------------------------
 // Response capture
 //
 // Records the headers of the last main-frame navigation so the cache-header
 // steps below can read the *original* response. Re-requesting the URL to read
 // them, as a generic header step must, would report the cache state of that
-// second request instead — turning every MISS into a HIT.
+// second request instead, which turns every MISS into a HIT.
 // ---------------------------------------------------------------------------
 
 Before({ order: 110 }, async function () {
@@ -220,7 +284,7 @@ function navigationHeaders(world) {
   if (!world._drupalResponseHeaders) {
     throw friendly({
       message: 'No page response has been recorded yet.',
-      hint: 'Navigate first — e.g. \'Given I am on the homepage\' — before asserting on response headers.',
+      hint: 'Open a page first (Given I am on the homepage), then assert on its response headers.',
     });
   }
   return world._drupalResponseHeaders;
@@ -258,10 +322,13 @@ Given(/^(I am |we are )*on the (login|sign-?in|registration|register|sign[ -]?up
 });
 
 /**
- * Assert one of the site's built-in forms is, or is not, visible — by the id
- * core derives from its machine name. Forms with fields the page is useless
- * without (login's username and password, the site-information form's site
- * name) additionally require those fields.
+ * Assert one of the site's built-in forms is, or is not, visible, by the
+ * `data-drupal-selector` and the id Form API derives from the form's machine
+ * name, whatever the theme. Forms with fields the page is useless without
+ * (the login form's username and password, the site information form's site
+ * name) additionally require those fields. The contact form is any form of
+ * the Contact module, not only the one named "feedback". On a site without
+ * the Contact or the Search module the step says so.
  *
  * Example #1: Then I should see the login form
  * Example #2: And should see the sign-in form
@@ -274,7 +341,18 @@ Given(/^(I am |we are )*on the (login|sign-?in|registration|register|sign[ -]?up
 Then(/^(I |we )*should( not)* see the (login|sign-?in|registration|register|sign[ -]?up|password reset|reset password|forgot password|contact[ -]?us|contact|search|site information) form$/, async function (pronounCase, notCase, formName) {
   const name = canonicalName(formName);
   const form = FORMS[name];
-  await assertPresence(this.page.locator(form.selector).first(), notCase, `the ${name} form ("${form.selector}")`);
+  // A page may carry the same form twice, once hidden (a collapsed search
+  // block in the header next to the search page's own form): the visible one
+  // is the form a person sees.
+  const visibleForm = this.page.locator(form.selector).locator('visible=true').first();
+  try {
+    await assertPresence(visibleForm, notCase, `the ${name} form ("${form.selector}")`);
+  } catch (error) {
+    const hint = { contact: SITE_HINTS.contact, search: SITE_HINTS.search }[name];
+    const here = new URL(this.page.url());
+    const problem = hint && !notCase ? await explainMissing(this, here.pathname + here.search, `${name} form at this path`, hint) : null;
+    throw problem || error;
+  }
   if (notCase) return;
   for (const field of form.fields) {
     await assertPresence(this.page.locator(field).first(), undefined, `the field "${field}"`);
@@ -323,10 +401,10 @@ Then(/^the site generator should( not)* be "([^"]*)"$/, async function (notCase,
 });
 
 /**
- * Assert core's asset pipeline delivered its settings payload — the
+ * Assert core's asset pipeline delivered its settings payload: the
  * `drupal-settings-json` script tag, and the `drupalSettings` object core's
- * JavaScript builds from it. A page that renders but never initialises this is
- * a page whose aggregated JavaScript never arrived.
+ * JavaScript builds from it. A page that renders without the object is a
+ * page whose aggregated JavaScript did not arrive or did not run.
  *
  * Example #1: Then the core JavaScript settings should be initialized
  * Example #2: And the core JavaScript settings should be initialized
@@ -345,7 +423,7 @@ Then(/^the core (?:JavaScript|javascript) settings should( not)* be initialized$
     friendly({
       message: 'Expected the core JavaScript settings object to be initialized.',
       cause: 'the settings payload is in the markup but `window.drupalSettings` is not an object',
-      hint: 'Core\'s drupal.js builds it from the payload — check the page for a JavaScript error that aborted it.',
+      hint: 'Core\'s drupal.js builds it from the payload: check the page for a JavaScript error that stopped it.',
     }).message
   );
 });
@@ -691,6 +769,10 @@ Then(/^(I |we )*should( not)* be on an? "([^"]*)?"(?: content)? page$/, async fu
  * field's machine name and delta) and save. The saved item is remembered as
  * "the content item I created" for the view, edit and delete steps.
  *
+ * The type is the machine name of a content type the site has. A site has
+ * only the types its build created (the Standard profile installs none), and
+ * the step says so when the type is missing.
+ *
  * Example #1: When I create an "article" content item titled "Release notes"
  * Example #2: And we create a "page" content item titled "About us"
  * Example #3: When create an "article" node titled "Hello world"
@@ -702,15 +784,10 @@ When(/^(I |we )*create an? "([^"]*)?" (?:content item|node) (?:titled|with title
   const defaultTime = this.minWaitTime.page || 3000;
   await gotoUrl(this.page, `${this.launchUrl}/node/add/${contentType}`);
   await waitForPageLoad(this.page, defaultTime);
-  const titleField = this.page.locator('#edit-title-0-value');
-  await waitForState(
-    titleField,
-    'visible',
-    `Expected the node form's title field ("#edit-title-0-value") on /node/add/${contentType}`
-  );
+  const titleField = await nodeAddForm(this, contentType);
   await titleField.fill(title);
-  await this.page.locator(VISIBLE_SUBMIT).first().click();
-  await waitForPageLoad(this.page, defaultTime);
+  await submitInPage(this, 'form.node-form [data-drupal-selector="edit-submit"], form.node-form #edit-submit, #edit-submit', 'form.node-form');
+  failIfSubmitBlocked(this, `the "${contentType}" form (the type has other required fields: fill the form with "I am adding ..." and the field steps instead)`);
   // The item just saved is "the content item I created" for the steps that
   // view, edit or delete it later in the scenario.
   const nid = await currentNodeId(this.page);
@@ -761,7 +838,7 @@ When(/^(I |we )*(?:log in|sign in) as "([^"]*)?" with password "([^"]*)?"$/, asy
   const defaultTime = this.minWaitTime.page || 3000;
   await fillField(this.page, 'name', username);
   await fillField(this.page, 'pass', password);
-  await this.page.locator(VISIBLE_SUBMIT).first().click();
+  await submitInPage(this, `${LOGIN_FORM.split(', ').map((form) => `${form} [data-drupal-selector="edit-submit"]`).join(', ')}, #edit-submit`, LOGIN_FORM);
   await waitForPageLoad(this.page, defaultTime);
 });
 
@@ -824,8 +901,8 @@ When(/^(I |we )*(?:log ?out|sign out)$/, async function (pronounCase) {
  * Submit the one-time-login request form at `/user/password`, which core keys
  * by either a username or an email address in the same `name` field.
  *
- * Assumes the form is already on screen — pair it with "Given I am on the
- * password reset page" — so the step stays usable when the form is reached from
+ * The form must be on screen already (pair the step with "Given I am on the
+ * password reset page"), so the step stays usable when the form is reached from
  * the login screen's own tab instead.
  *
  * Example #1: When I request a new password for "admin"
@@ -838,7 +915,7 @@ When(/^(I |we )*(?:log ?out|sign out)$/, async function (pronounCase) {
 When(/^(I |we )*request a (?:new password|password reset) for "([^"]*)?"$/, async function (pronounCase, identifier) {
   const defaultTime = this.minWaitTime.page || 3000;
   await fillField(this.page, 'name', identifier);
-  await this.page.locator(VISIBLE_SUBMIT).first().click();
+  await submitInPage(this, 'form[data-drupal-selector="user-pass"] [data-drupal-selector="edit-submit"], #user-pass #edit-submit, #edit-submit', '#user-pass, form.user-pass');
   await waitForPageLoad(this.page, defaultTime);
 });
 
@@ -848,7 +925,9 @@ When(/^(I |we )*request a (?:new password|password reset) for "([^"]*)?"$/, asyn
 
 /**
  * Search for a term by filling the keyword field (`input[name="keys"]`, the
- * name core uses for both the search block and the search page) and submitting.
+ * name the Search module uses for both the search block and the search page;
+ * the "search input" named selector) and submitting. On a site without the
+ * Search module the step says so.
  *
  * Example #1: When I search for "webship"
  * Example #2: And we search for "cucumber"
@@ -859,20 +938,34 @@ When(/^(I |we )*request a (?:new password|password reset) for "([^"]*)?"$/, asyn
  */
 When(/^(I |we )*search for "([^"]*)?"$/, async function (pronounCase, term) {
   const defaultTime = this.minWaitTime.page || 3000;
-  // `input[name="keys"]` is not unique on the search page: a header search
+  // The keyword field is not unique on the search page: a header search
   // block renders its own collapsed field with the same name alongside the
-  // search page's own. Filter to the visible one.
-  const keys = this.page.locator('input[name="keys"]:visible').first();
-  await waitForState(keys, 'visible', 'Expected the search keyword field (\'input[name="keys"]\') to be visible');
+  // search page's own. The visible one is filled.
+  const selector = namedSelector(this, 'search input', 'input[name="keys"]');
+  const keys = this.page.locator(selector).locator('visible=true').first();
+  const there = await keys.waitFor({ state: 'visible', timeout: budget(this) + 2000 }).then(() => true).catch(() => false);
+  if (!there) {
+    const here = new URL(this.page.url());
+    const problem = await explainMissing(this, here.pathname + here.search, 'search page at this path', SITE_HINTS.search);
+    throw problem || friendly({
+      message: 'The page shows no search keyword field.',
+      cause: `nothing visible matches "${selector}" at ${this.page.url()}`,
+      hint: `Open the search page first (Given I am on the search page). ${SITE_HINTS.search}`,
+    });
+  }
   await keys.fill(term);
   await keys.press('Enter');
   await waitForPageLoad(this.page, defaultTime);
 });
 
 /**
- * Assert the search returned results (`.search-results`), or — with "no" or
- * "not" — that it reported none, via the module's default "Your search yielded
- * no results." message.
+ * Assert the search returned results, or, with "no" or "not", that it
+ * returned none. The results are the items of the list the Search module
+ * renders (`ol.search-results`; the "search results" named selector), or,
+ * where a theme drops that class, of the ordered list of the main region
+ * whose every item carries a linked heading. "No results" means the page ran a search and
+ * lists no item, so the assertion does not depend on the wording or the
+ * language of the "Your search yielded no results." text.
  *
  * Example #1: Then I should see search results
  * Example #2: And we should see search results
@@ -882,15 +975,49 @@ When(/^(I |we )*search for "([^"]*)?"$/, async function (pronounCase, term) {
  *
  */
 Then(/^(I |we )*should( not)* see (no )?search results$/, async function (pronounCase, notCase, noCase) {
-  if (notCase || noCase) {
-    await assertPresence(
-      this.page.getByText('Your search yielded no results.').first(),
-      undefined,
-      'the "no results" message'
-    );
-    return;
+  const wantNone = Boolean(notCase || noCase);
+  const list = namedSelector(this, 'search results', '.search-results, ol[class*="search-results"]');
+  const input = namedSelector(this, 'search input', 'input[name="keys"]');
+  let seen = { items: [], searched: false };
+  const check = async () => {
+    seen = await this.page.evaluate(({ list, input }) => {
+      const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+      let lists = [];
+      try { lists = [...document.querySelectorAll(list)]; } catch (e) { lists = []; }
+      if (!lists.length) {
+        // A theme may drop the class: the results are then the ordered list
+        // of the main region whose every item carries a linked heading.
+        lists = [...document.querySelectorAll('main ol, [role="main"] ol')]
+          .filter((ol) => ol.children.length && [...ol.children].every((li) => li.tagName === 'LI' && li.querySelector('h2 a, h3 a, h4 a')));
+      }
+      const items = [];
+      for (const el of lists) {
+        const rows = el.matches('ol, ul') ? [...el.children].filter((c) => c.tagName === 'LI') : [...el.querySelectorAll('li, article, .search-result')];
+        for (const row of rows) {
+          const title = row.querySelector('h2, h3, h4, a');
+          items.push(norm((title || row).textContent).slice(0, 80));
+        }
+      }
+      let field = null;
+      try { field = document.querySelector(input); } catch (e) { field = null; }
+      const searched = /[?&]keys=/.test(window.location.search) || Boolean(field && field.value);
+      return { items, searched };
+    }, { list, input });
+    return wantNone ? (seen.searched && seen.items.length === 0) : seen.items.length > 0;
+  };
+  if (await pollUntil(check, wantNone ? budget(this) : WAIT_TIMEOUT, this.page)) return;
+  if (!seen.searched && !seen.items.length) {
+    const here = new URL(this.page.url());
+    const problem = await explainMissing(this, here.pathname + here.search, 'search page at this path', SITE_HINTS.search);
+    if (problem) throw problem;
   }
-  await assertPresence(this.page.locator('.search-results'), undefined, 'the search results list (".search-results")', { attached: true });
+  throw friendly({
+    message: wantNone ? 'Expected the search to return no results.' : 'Expected the search to return results.',
+    cause: seen.items.length
+      ? `it lists ${seen.items.length}: ${seen.items.slice(0, 5).map((t) => `"${t}"`).join(', ')}`
+      : (seen.searched ? `nothing matches "${list}" with an item in it` : 'the page ran no search (no "keys" in the URL and no keyword in the search field)'),
+    hint: 'Search first (When I search for "..."). New content is found once it is indexed, which cron does. Set the "search results" named selector when the theme lists results in its own markup.',
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -898,11 +1025,13 @@ Then(/^(I |we )*should( not)* see (no )?search results$/, async function (pronou
 // ---------------------------------------------------------------------------
 
 /**
- * Fill and submit the default contact form. Anonymous submissions also need a
+ * Fill and submit the contact form on screen (core's Contact module; open it
+ * first with "I am on the contact page"). A visitor's submission also needs a
  * name and an email address: when those fields are present they are filled
  * from the `anonymous` entry of the users registry
  * (`worldParameters.users.anonymous`, keys `name` and `email`), falling back
- * to "Webship QA" / "qa@example.com".
+ * to "Webship QA" / "qa@example.com". On a site without the Contact module
+ * or without a contact form the step says so.
  *
  * Example #1: When I submit the contact form with subject "Question" and message "Hello there"
  * Example #2: And we submit the contact form with subject "Support" and message "Need help"
@@ -922,10 +1051,20 @@ When(/^(I |we )*submit the contact form with subject "([^"]*)" and message "([^"
   if (await mailField.isVisible({ timeout: 3000 }).catch(() => false)) {
     await fillField(this.page, 'mail', anonymous.email || 'qa@example.com');
   }
+  if (!(await this.page.locator('[name="subject[0][value]"], [name="message[0][value]"]').count())) {
+    const here = new URL(this.page.url());
+    const problem = await explainMissing(this, here.pathname + here.search, 'contact form at this path', SITE_HINTS.contact);
+    throw problem || friendly({
+      message: 'The page shows no contact form.',
+      cause: `${this.page.url()} has no subject and no message field`,
+      hint: 'Open the contact form first (Given I am on the contact page, or the path of the form the site uses).',
+    });
+  }
   await fillField(this.page, 'subject[0][value]', subject);
   await fillField(this.page, 'message[0][value]', message);
-  await this.page.locator(VISIBLE_SUBMIT).first().click();
-  await waitForPageLoad(this.page, defaultTime);
+  // Through the form's own button: a page may carry other forms with an
+  // "#edit-submit" of their own (a search block in the header).
+  await submitInPage(this, 'form[data-drupal-selector^="contact-message-"] [data-drupal-selector="edit-submit"], form[data-drupal-selector^="contact-message-"] [type="submit"]:not([data-drupal-selector="edit-preview"]), #edit-submit', 'form[data-drupal-selector^="contact-message-"]');
 });
 
 // ---------------------------------------------------------------------------
@@ -933,7 +1072,7 @@ When(/^(I |we )*submit the contact form with subject "([^"]*)" and message "([^"
 // ---------------------------------------------------------------------------
 
 /**
- * Assert the current page is — or is not — the default access-denied (403) or
+ * Assert the current page is, or is not, the default access-denied (403) or
  * not-found (404) page, by the title the System module gives each.
  *
  * Checks the rendered title rather than the status code so it still holds when
@@ -978,10 +1117,10 @@ Then(/^(I |we )*should( not)* (?:be on|land on) the (access denied|403|404|page 
 
 /**
  * Assert how core's caching layers answered the last navigation, via the
- * `X-Drupal-Cache` (Internal Page Cache — anonymous, whole-response) and
- * `X-Drupal-Dynamic-Cache` (Dynamic Page Cache — authenticated, per-block)
- * headers. A "HIT" is a cached response; anything else — "MISS",
- * "UNCACHEABLE" or a missing header — is not.
+ * `X-Drupal-Cache` (Internal Page Cache: whole responses for visitors) and
+ * `X-Drupal-Dynamic-Cache` (Dynamic Page Cache: per block, for every session)
+ * headers. A "HIT" is a cached response; anything else ("MISS",
+ * "UNCACHEABLE" or a missing header) is not.
  *
  * Reads the headers recorded for the original navigation rather than
  * re-requesting the URL, because a second request would report its own cache
@@ -1485,11 +1624,7 @@ When(/^(I |we )*(?:insert the selected media|submit (?:the )?media library dialo
 Given(/^(I am |we are )*(?:adding|creating) an? "([^"]*)"(?: content item| node)?$/, async function (pronounCase, contentType) {
   const machineName = contentType.toLowerCase().replace(/\s+/g, '_');
   await navigate(this, `/node/add/${machineName}`);
-  await waitForState(
-    this.page.locator('form.node-form, #edit-title-0-value').first(),
-    'attached',
-    `Expected the node form on /node/add/${machineName}`
-  );
+  await nodeAddForm(this, machineName);
 });
 
 /**
@@ -1598,11 +1733,13 @@ When(/^(I |we )*(?:flush|clear) all caches$/, async function (pronounCase) {
 
 /**
  * Submit a form by the id of its submit button, dispatching the click inside
- * the page. Core suffixes a repeated id (`edit-submit--2`) and some admin
- * themes clone the primary button into a sticky bar that covers the original,
- * so every element whose id, `data-drupal-selector` or `name` matches is a
- * candidate and the visible one is clicked. Waits for the navigation the
- * submit causes.
+ * the page. Core suffixes a repeated id (`edit-submit--2`), a search block in
+ * the header has an `edit-submit` of its own, and some administration themes
+ * clone the primary button into a sticky bar that covers the original. So
+ * every element whose id, `data-drupal-selector` or `name` matches is a
+ * candidate, and the visible one in the main region of the page is clicked.
+ * Waits for the navigation the submit causes; when the browser refuses the
+ * submit because a required field is empty, the step returns at once.
  *
  * Example #1: When I submit by id "edit-submit"
  * Example #2: And I submit the form by id "edit-submit"
@@ -1612,6 +1749,8 @@ When(/^(I |we )*(?:flush|clear) all caches$/, async function (pronounCase) {
  *
  */
 When(/^(I |we )*submit (?:the form )?by (?:the )?id "([^"]*)"$/, async function (pronounCase, id) {
+  // In this order: the exact id, the id core suffixed, the selector Form API
+  // states, the name. The first with a visible match is the one submitted.
   const selector = `#${id}, [id^="${id}--"], [data-drupal-selector="${id}"], [name="${id}"]`;
   await this.page.locator(selector).first().waitFor({ state: 'attached', timeout: budget(this) }).catch(() => {});
   const found = await submitInPage(this, selector);

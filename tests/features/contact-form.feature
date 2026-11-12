@@ -10,6 +10,8 @@ Feature: Contact form
     When I submit the contact form with subject "A question" and message "Where are the docs?"
     Then I should see "Your message has been sent."
 
+  @drupal11
+
   Scenario: An empty subject is refused before anything is sent
     Given I am not logged in
     And I am on "/contact"

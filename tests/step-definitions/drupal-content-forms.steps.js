@@ -123,40 +123,51 @@ When(/^(I |we )*try to save the (?:content|content item|node)$/, async function 
 });
 
 /**
- * Assert the browser refused to submit the form because a required field is
+ * Assert the browser refused to submit a form because a required field is
  * empty, naming the field: HTML5 constraint validation blocks the submit
- * before any request is made, and the form stays on screen.
+ * before any request is made, and the form stays on screen. The fields are
+ * those of the form a step just tried to submit ("I try to save the
+ * content", "I submit the contact form ...", "I submit by id ..."), else
+ * those of every form on the page.
  *
  * Example #1: Then the "Title" field should block submission as required
- * Example #2: And the "Description" field should block submission as required
- * Example #3: Then the "Content" field should block submission as required
- * Example #4: And the "SEO title" field should block submission as required
- * Example #5: Then the "Name" field should block submission as required
+ * Example #2: And the "Title" field should block submission as required
+ * Example #3: Then the "Body" field should block submission as required
+ * Example #4: And the "Email address" field should block submission as required
+ * Example #5: Then the "Summary" field should block submission as required
  *
  */
 Then(/^the "([^"]*)" field should block submission as required$/, async function (label) {
-  const form = this.page.locator('form.node-form, form[id$="-form"]').first();
-  await waitForState(form, 'attached', 'Expected a form on the page');
-  const invalid = await form.evaluate((formEl) =>
-    [...formEl.elements]
-      .filter((el) => el.willValidate && !el.checkValidity())
-      .map((el) => {
-        const labelEl = formEl.querySelector(`label[for="${el.id}"]`);
-        return {
-          label: labelEl ? labelEl.textContent.replace(/\s+/g, ' ').trim() : el.name,
-          message: el.validationMessage,
-        };
-      })
-  );
+  let invalid = this._drupalSubmitBlocked || [];
+  if (!invalid.length) {
+    invalid = await this.page.evaluate(() => {
+      const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+      const found = [];
+      for (const form of document.forms) {
+        if (form.noValidate) continue;
+        for (const el of form.elements) {
+          if (!el.willValidate || el.checkValidity()) continue;
+          const labelEl = el.id ? document.querySelector(`label[for="${el.id}"]`) : null;
+          found.push({ label: norm(labelEl ? labelEl.textContent : el.name), name: el.name || '', message: el.validationMessage });
+        }
+      }
+      return found;
+    });
+  }
   assert.ok(
     invalid.length > 0,
-    friendly('Expected the form to be blocked by an unfilled required field, but the form validates.').message
+    friendly({
+      message: 'Expected the form to be blocked by an empty required field.',
+      cause: 'every field of the forms on the page passes the browser\'s validation',
+      hint: 'A form with the "novalidate" attribute is validated by the server instead: assert its error message.',
+    }).message
   );
+  const wanted = label.trim().toLowerCase();
   assert.ok(
-    invalid.some((f) => f.label.includes(label)),
+    invalid.some((field) => field.label.toLowerCase().includes(wanted) || field.name.toLowerCase() === wanted),
     friendly({
       message: `Expected the "${label}" field to block submission.`,
-      cause: `the blocking fields were: ${invalid.map((f) => `"${f.label}" (${f.message})`).join(', ')}`,
+      cause: `the blocking fields are: ${invalid.map((field) => `"${field.label}" (${field.message})`).join(', ')}`,
     }).message
   );
 });
