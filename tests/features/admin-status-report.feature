@@ -17,4 +17,4 @@ Feature: Status report
 
   Scenario: The status report agrees with the generator meta tag
     Given I am on the status report page
-    Then the site should be running Drupal
+    Then the site generator should be "Drupal"
