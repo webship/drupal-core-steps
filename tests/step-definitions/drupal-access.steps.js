@@ -158,7 +158,8 @@ Then(/^(I |we )*should( not)* be able to (edit|delete) the content at "([^"]*)"$
 
 /**
  * Assert the page shows no PHP error: a fatal error, warning, notice or
- * deprecation printed in PHP's "in <file> on line <n>" form, an uncaught
+ * deprecation printed in PHP's "in <file> on line <n>" form or in Drupal's
+ * "(line <n> of <file>)" form, an uncaught
  * exception, or core's "The website encountered an unexpected error" page.
  * The quick health check for every page a scenario lands on.
  *
@@ -173,6 +174,8 @@ Then(/^(?:the )?page should (?:not have(?: any)?|have no) PHP errors$/, async fu
   const text = await this.page.evaluate(() => (document.body && document.body.innerText) || '').catch(() => '');
   const patterns = [
     /\b(?:Fatal error|Parse error|Warning|Notice|Deprecated)\b\s*:\s.{0,300}?\bin\s\S+\.(?:php|module|inc|theme|install)\s+on\s+line\s+\d+/,
+    // Drupal's own rendering of the same errors: "Warning: ... in ... (line 42 of /path/file.php)".
+    /\b(?:Fatal error|Parse error|Warning|Notice|Deprecated(?: function)?|Error|TypeError|ValueError|ArgumentCountError)\b\s*:\s.{0,300}?\(line\s+\d+\s+of\s+\S+\)/,
     /The website encountered an unexpected error/,
     /Uncaught\s+\w*(?:Exception|Error)\b/,
   ];
