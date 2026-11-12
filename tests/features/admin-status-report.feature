@@ -18,3 +18,14 @@ Feature: Status report
   Scenario: The status report agrees with the generator meta tag
     Given I am on the status report page
     Then the site generator should be "Drupal"
+
+  Scenario: The status report counts no errors
+    Then the status report should have no errors
+    And the status report should count 0 errors
+
+  # A local build always warns that settings.php is writable.
+  Scenario: The status report names its warnings
+    Then the status report should have warnings
+    And the status report should list the warning "Configuration files"
+    And the status report should not list the error "Configuration files"
+    And the status report should count at most 5 warnings
