@@ -1,6 +1,6 @@
 {
   "name": "@webship-js/drupal-core-steps",
-  "version": "2.1.5",
+  "version": "2.2.0",
   "description": "Cucumber step definitions for Drupal core sites, a plugin for webship-js (Playwright and Cucumber): login, access control, content, forms, administration, search and the status report, on Drupal 11 and Drupal 12.",
   "main": "tests/step-definitions/drupal-core.steps.js",
   "files": [
