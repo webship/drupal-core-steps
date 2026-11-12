@@ -91,7 +91,8 @@ Then(/^the "([^"]*)" module should( not)* be (?:installed|enabled)$/, async func
 
 /**
  * Assert which theme is the site's default theme, by the name the Appearance
- * page (`/admin/appearance`) shows next to "(default theme)".
+ * page (`/admin/appearance`) shows next to "(default theme)", or next to
+ * "(default theme, administration theme)" when one theme serves as both.
  *
  * Example #1: Then the default theme should be "Olivero"
  * Example #2: And the default theme should be "Mercury"
@@ -102,8 +103,9 @@ Then(/^the "([^"]*)" module should( not)* be (?:installed|enabled)$/, async func
  */
 Then(/^the default theme should( not)* be "([^"]*)"$/, async function (notCase, themeName) {
   const html = await adminHtml(this, '/admin/appearance', 'the Appearance page (/admin/appearance)');
-  const heading = (html.match(/<h3[^>]*>[\s\S]*?<\/h3>/g) || []).map(textOf).find((t) => /\(default theme\)/i.test(t));
-  const current = heading ? heading.replace(/\(default theme\)/i, '').replace(/\s+\d[\w.-]*$/, '').trim() : '';
+  // "(default theme)", or "(default theme, administration theme)" when one theme is both.
+  const heading = (html.match(/<h3[^>]*>[\s\S]*?<\/h3>/g) || []).map(textOf).find((t) => /\(default theme\b[^)]*\)/i.test(t));
+  const current = heading ? heading.replace(/\(default theme\b[^)]*\)/i, '').replace(/\s+\d[\w.-]*$/, '').trim() : '';
   const matches = current.toLowerCase().startsWith(themeName.toLowerCase());
   assert.ok(
     notCase ? !matches : matches,
