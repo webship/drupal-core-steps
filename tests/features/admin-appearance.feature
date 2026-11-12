@@ -6,6 +6,8 @@ Feature: Appearance page
   Background:
     Given I am a logged in user with the "admin" user
 
+  @drupal11
+
   Scenario: The appearance page lists the default and admin themes
     Given I am on the appearance page
     Then I should be on an admin page

@@ -12,7 +12,7 @@ Feature: Logout
     When I log out
     Then I should not be logged in
     And I should not see the navigation sidebar
-    And I should be on the front page
+    And I should be on the homepage
 
   Scenario: Administration pages are refused again after logging out
     When I log out

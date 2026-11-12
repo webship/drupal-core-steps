@@ -4,6 +4,8 @@ Feature: Baseline accessibility
   I want the structural accessibility core guarantees on its own pages
   So that a theme or module change cannot quietly remove it
 
+  @drupal11
+
   Scenario: The front page exposes core's document structure
     Given I am an anonymous user
     And I am on the homepage

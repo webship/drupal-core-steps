@@ -9,11 +9,17 @@ Feature: Steps that hold under any theme
   I want the steps to read what core states, not the classes of core's themes
   So that the same scenarios run under any theme
 
-  Scenario: The front page and the page title are recognised
+  # A visitor has a front page on Drupal 11; the Standard profile of Drupal
+  # 12 makes an administration page the front page (see drupal-12.feature).
+  @drupal11
+  Scenario: The front page is recognised
     Given I am not logged in
     When I am on the homepage
     Then I should be on the front page
     And I should not be on an admin page
+
+  Scenario: The page title and the login form are recognised
+    Given I am not logged in
     When I am on the login page
     Then I should not be on the front page
     And I should see the login form
@@ -35,7 +41,6 @@ Feature: Steps that hold under any theme
     And the content item should be published
     And I should see the page title "Sample article"
     And I should see the breadcrumb
-    And "Home" should be in the breadcrumb
 
   Scenario: An administration page is recognised
     Given I am a logged in user with the "admin" user

@@ -16,6 +16,8 @@ Feature: Local tasks
     Then I should see the primary tabs
     And I should see the page title "Reset your password"
 
+  @drupal11
+
   Scenario: The front page defines no local tasks
     Given I am an anonymous user
     And I am on the homepage
