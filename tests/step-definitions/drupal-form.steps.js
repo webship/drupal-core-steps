@@ -130,12 +130,12 @@ When(/^(I |we )*open the "([^"]*)" vertical tab$/, async function (pronounCase, 
  *
  * Example #1: When I wait for the AJAX throbber to disappear
  * Example #2: And I wait for the AJAX throbber to disappear
- * Example #3: When we wait for Drupal AJAX to finish
- * Example #4: And I wait for Drupal AJAX to finish
+ * Example #3: When we wait for the AJAX requests to finish
+ * Example #4: And I wait for the AJAX requests to finish
  * Example #5: When I wait for the AJAX throbber to go away
  *
  */
-When(/^(I |we )*wait for (?:the AJAX throbber to (?:disappear|go away)|Drupal AJAX to finish)$/, async function (pronounCase) {
+When(/^(I |we )*wait for (?:the AJAX throbber to (?:disappear|go away)|the AJAX requests to finish)$/, async function (pronounCase) {
   await smartSettle(this.page, budget(this));
   try {
     await this.page.waitForFunction(

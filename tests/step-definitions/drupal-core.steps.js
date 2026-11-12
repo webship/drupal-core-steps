@@ -22,10 +22,10 @@
 //   - the `Generator` meta tag / `X-Generator` header, and the
 //     `X-Drupal-Cache` / `X-Drupal-Dynamic-Cache` page-cache headers
 //
-// The Gherkin phrasing stays product-agnostic ("the login form", "the front
-// page", ...); only these comments name the CMS, to document which convention
-// each step targets. The one exception is the two steps that assert the site
-// *is* Drupal, where naming it is the whole point.
+// No step phrase carries the name of the CMS ("the login form", "the front
+// page", "the site generator"); only these comments name it, to document
+// which convention each step targets. A scenario passes the name as an
+// argument where it is the point: the site generator should be "Drupal 11".
 //
 // Composes with webship-js's built-in steps (navigation, assertion, form,
 // response, accessibility, ...) rather than duplicating them. Anything the core
@@ -286,38 +286,38 @@ Then(/^(I |we )*should( not)* see the (login|sign-?in|registration|register|sign
 // ---------------------------------------------------------------------------
 
 /**
- * Assert the site really is Drupal, via the `Generator` meta tag core's System
- * module emits — optionally pinning the major version, which is what turns a
- * smoke test into an upgrade guard.
+ * Assert what the site reports as its generator, by the `Generator` meta tag
+ * the System module prints: the name of the software, optionally with its
+ * major version, which turns a smoke test into an upgrade guard. The text
+ * is matched from the start of the tag, on whole words: "Drupal" and
+ * "Drupal 11" both match "Drupal 11 (https://www.drupal.org)", "Drupal 1"
+ * does not.
  *
- * The one place naming the CMS in the Gherkin is the point rather than a leak:
- * the assertion has no meaning phrased generically.
- *
- * Example #1: Then the site should be running Drupal
- * Example #2: Then the site should be running Drupal 10
- * Example #3: And the site should be running Drupal 11
- * Example #4: Then the site should not be running Drupal 9
- * Example #5: And the site should not be running Drupal
+ * Example #1: Then the site generator should be "Drupal"
+ * Example #2: Then the site generator should be "Drupal 10"
+ * Example #3: And the site generator should be "Drupal 11"
+ * Example #4: Then the site generator should not be "Drupal 9"
+ * Example #5: And the site generator should not be "Drupal 12"
  *
  */
-Then(/^the site should( not)* be running Drupal(?: (\d+))?$/, async function (notCase, majorVersion) {
+Then(/^the site generator should( not)* be "([^"]*)"$/, async function (notCase, expected) {
   const meta = this.page.locator('meta[name="Generator"]');
   const count = await meta.count();
-  const content = count ? ((await meta.first().getAttribute('content')) || '') : '';
-  const match = content.match(/^Drupal\s+(\d+)/i);
-  const matches = Boolean(match) && (!supplied(majorVersion) || match[1] === String(majorVersion));
-  const expected = supplied(majorVersion) ? `Drupal ${majorVersion}` : 'Drupal';
+  const content = count ? ((await meta.first().getAttribute('content')) || '').trim() : '';
+  const wanted = String(expected || '').trim();
+  const matches = wanted !== '' && content.toLowerCase().startsWith(wanted.toLowerCase())
+    && !/[A-Za-z0-9.]/.test(content.charAt(wanted.length));
 
   assert.ok(
     notCase ? !matches : matches,
     friendly({
       message: notCase
-        ? `Expected the site not to report itself as ${expected}.`
-        : `Expected the site to report itself as ${expected}.`,
+        ? `Expected the site not to report "${wanted}" as its generator.`
+        : `Expected the site to report "${wanted}" as its generator.`,
       cause: count
         ? `the Generator meta tag reads "${content}"`
         : 'the page has no <meta name="Generator"> tag',
-      hint: 'Core emits this tag from the System module; a site can suppress it in settings or via a contrib module.',
+      hint: 'The System module prints this tag; a site can remove it in its settings or with a module.',
     }).message
   );
 });
