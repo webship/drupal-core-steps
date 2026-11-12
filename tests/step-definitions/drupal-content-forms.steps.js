@@ -2,8 +2,8 @@
 
 // Steps for core's node form and content moderation that apply to any site:
 // the content types a site has, saving the node form through the Save button
-// a person sees (an admin theme may clone it into a sticky bar), the browser
-// refusing a form with an empty required field, and the moderation state of
+// a person sees (an administration theme may clone it into a sticky bar), the
+// browser refusing a form with an empty required field, and the moderation state of
 // a content item under core's Content Moderation module.
 
 const { When, Then } = require('@cucumber/cucumber');
@@ -13,13 +13,14 @@ const {
   joinUrl,
   waitForState,
   submitInPage,
+  failIfSubmitBlocked,
   currentNodeId,
 } = require('./drupal-helpers');
 
 const SELECTORS = {
-  // An admin theme may clone the node form's primary Save into a sticky
-  // action bar; that clone is the control a person can click, the original
-  // sits underneath. Gin's ids come first, then core's.
+  // An administration theme may clone the node form's primary Save into a
+  // sticky action bar; that clone is the control a person can click, the
+  // original sits underneath. The sticky clone's ids come first, then core's.
   saveButton: '#gin-sticky-edit-submit, [data-drupal-selector="gin-sticky-edit-submit"], form.node-form #edit-submit, #edit-submit',
   // Core content moderation's control form on a moderated entity's page.
   moderationControl: 'form.content-moderation-entity-moderation-form, .entity-moderation-form',
@@ -63,18 +64,23 @@ Then(/^the "([^"]*)" content type should( not)* exist$/, async function (label, 
 });
 
 /**
- * Save the node form through the Save button a person sees. An admin theme
- * such as Gin clones the form's Save into a sticky action bar on top of the
+ * Save the node form through the Save button a person sees. An administration
+ * theme may clone the form's Save into a sticky action bar on top of the
  * original, so the sticky clone is submitted when present, the plain
  * `#edit-submit` otherwise, both through an in-page click that waits for the
  * navigation. The saved node becomes "the content item I created" for the
  * steps that view, edit or delete it.
  *
+ * When the browser refuses the submit because a required field is empty, the
+ * step fails at once with the browser's own message for each such field; it
+ * does not wait for a page that cannot come. A scenario that expects the
+ * refusal uses "I try to save the content".
+ *
  * Example #1: When I save the content
- * Example #2: And I save the content
+ * Example #2: And I save the content item
  * Example #3: When we save the content
- * Example #4: And we save the content item
- * Example #5: When I save the node
+ * Example #4: And I save the node
+ * Example #5: When we save the node
  *
  */
 When(/^(I |we )*save the (?:content|content item|node)$/, async function (pronounCase) {
@@ -85,10 +91,35 @@ When(/^(I |we )*save the (?:content|content item|node)$/, async function (pronou
       hint: 'Open a content add or edit form first; the step submits the sticky "Save" clone or the form\'s own "#edit-submit".',
     });
   }
+  failIfSubmitBlocked(this, 'the node form');
   // A saved node is "the content item I created" for the steps that come back
   // to it, the same as after "I create a ... content item titled ...".
   const nid = await currentNodeId(this.page);
   if (nid) this._drupalCreated = { nid, url: this.page.url() };
+});
+
+/**
+ * Press the node form's Save button in a scenario that expects the form not
+ * to go through: an empty required field, a value the browser rejects. The
+ * step passes whether or not the form was submitted; follow it with "the
+ * "..." field should block submission as required", or with an error message
+ * assertion when the server is the one that refuses.
+ *
+ * Example #1: When I try to save the content
+ * Example #2: And I try to save the content item
+ * Example #3: When we try to save the content
+ * Example #4: And I try to save the node
+ * Example #5: When we try to save the node
+ *
+ */
+When(/^(I |we )*try to save the (?:content|content item|node)$/, async function (pronounCase) {
+  const found = await submitInPage(this, SELECTORS.saveButton, 'form.node-form');
+  if (!found) {
+    throw friendly({
+      message: 'No Save button was found on the node form.',
+      hint: 'Open a content add or edit form first; the step submits the sticky "Save" clone or the form\'s own "#edit-submit".',
+    });
+  }
 });
 
 /**
