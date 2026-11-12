@@ -19,11 +19,18 @@ Feature: Navigation module and the node form
     When I choose the "Edit" action in the top bar
     Then "#edit-title-0-value" should have value "Sample article"
 
-  Scenario: The node form refuses an empty title and saves through the Save button
+  # The browser validates the form on Drupal 11. Drupal 12 switches HTML5
+  # validation off and lets the server answer: see drupal-12.feature.
+  @drupal11
+  Scenario: The browser refuses a node form with an empty title
     Given I am a logged in user with the "admin" user
     And I am adding a "page"
     When I try to save the content
     Then the "Title" field should block submission as required
+
+  Scenario: The node form saves through the Save button
+    Given I am a logged in user with the "admin" user
+    And I am adding a "page"
     When I fill in "Title" with "Saved through the Save button"
     And I save the content
     Then I should see a status message "has been created."

@@ -51,6 +51,7 @@
     "status report": ".system-status-report",
     "search form": "#search-form, form.search-form, #search-block-form",
     "search input": "input[name=\"keys\"]",
+    "search results": ".search-results, ol[class*=\"search-results\"]",
     "moderation control": "form.content-moderation-entity-moderation-form, .entity-moderation-form",
     "layout builder": "#layout-builder",
     "layout builder add section": ".layout-builder__link--add"

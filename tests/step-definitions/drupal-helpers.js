@@ -142,7 +142,7 @@ async function assertPresence(locator, negated, label, options = {}) {
 }
 
 /**
- * Assert a locator's text contains — or, with `negated`, does not contain — an
+ * Assert a locator's text contains, or with `negated` does not contain, an
  * expected substring, when the step supplied one. Steps that take an optional
  * `"..."` argument share this so the "is it there" and "does it say the right
  * thing" halves stay one step.
@@ -424,6 +424,94 @@ function resolveUser(world, handle) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Runs inside the page (it is passed to `page.evaluate`, so it uses nothing
+ * from this module): find the submit control a selector list means, then
+ * report the fields that block its form, or click it.
+ *
+ * `#edit-submit` is not unique on a Drupal page, so the control is chosen
+ * with care. The selector list is read in the order it is written, most
+ * specific first: the first selector with a visible match wins, and among
+ * its matches one inside the main region wins over one in the header or a
+ * sidebar (a search block there has an `#edit-submit` of its own). Only when
+ * nothing is visible is a hidden match taken.
+ *
+ * @param {{selector: string, formSelector: (string|undefined), mode: ('check'|'click')}} input
+ * @returns {{found: boolean, blocked: Array<{label: string, name: string, message: string}>}}
+ */
+function submitControlInPage(input) {
+  const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+  const visible = (el) => Boolean(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+  const inMain = (el) => Boolean(el.closest('main, [role="main"], #main-content, .layout-content, [role="dialog"], dialog, #drupal-off-canvas'))
+    || Boolean(el.form && el.form.closest('main, [role="main"], #main-content, .layout-content'));
+  // Split the list on its top-level commas.
+  const parts = [];
+  let depth = 0;
+  let quote = '';
+  let current = '';
+  for (const ch of String(input.selector || '')) {
+    if (quote) {
+      if (ch === quote) quote = '';
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (ch === '(' || ch === '[') {
+      depth += 1;
+    } else if (ch === ')' || ch === ']') {
+      depth -= 1;
+    } else if (ch === ',' && depth === 0) {
+      if (current.trim()) parts.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  if (current.trim()) parts.push(current.trim());
+  const matches = (part) => {
+    try { return [...document.querySelectorAll(part)]; } catch (e) { return []; }
+  };
+  let button = null;
+  for (const part of parts) {
+    const shown = matches(part).filter(visible);
+    if (shown.length) {
+      button = shown.find(inMain) || shown[0];
+      break;
+    }
+  }
+  if (!button) {
+    for (const part of parts) {
+      const all = matches(part);
+      if (all.length) {
+        button = all[0];
+        break;
+      }
+    }
+  }
+  let form = (button && button.form) || null;
+  if (!button && input.formSelector) {
+    try { form = document.querySelector(input.formSelector); } catch (e) { form = null; }
+  }
+  if (!button && !form && input.mode === 'click') form = document.forms[0] || null;
+
+  let blocked = [];
+  if (button && form && !form.noValidate && !button.formNoValidate) {
+    blocked = [...form.elements]
+      .filter((el) => el.willValidate && !el.checkValidity())
+      .map((el) => {
+        const label = el.id ? document.querySelector(`label[for="${el.id}"]`) : null;
+        return {
+          label: norm(label ? label.textContent : (el.getAttribute('aria-label') || el.name || el.id)),
+          name: el.name || el.id || '',
+          message: el.validationMessage,
+        };
+      });
+  }
+  if (input.mode === 'click') {
+    if (button) button.click();
+    else if (form) form.submit();
+  }
+  return { found: Boolean(button || form), blocked };
+}
+
+/**
  * The fields that stop the browser from submitting a form: every control of
  * the form the submit button belongs to that fails HTML5 constraint
  * validation (an empty required field, a malformed email address), with its
@@ -436,27 +524,8 @@ function resolveUser(world, handle) {
  * @returns {Promise<Array<{label: string, name: string, message: string}>>}
  */
 async function blockingFields(page, selector, formSelector) {
-  return page.evaluate(({ selector, formSelector }) => {
-    const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
-    let candidates = [];
-    try { candidates = [...document.querySelectorAll(selector)]; } catch (e) { candidates = []; }
-    const button = candidates.find((el) => el.offsetParent !== null) || candidates[0] || null;
-    let form = (button && button.form) || null;
-    if (!form && !button && formSelector) {
-      try { form = document.querySelector(formSelector); } catch (e) { form = null; }
-    }
-    if (!form || !button || form.noValidate || button.formNoValidate) return [];
-    return [...form.elements]
-      .filter((el) => el.willValidate && !el.checkValidity())
-      .map((el) => {
-        const label = el.id ? form.querySelector(`label[for="${el.id}"]`) || document.querySelector(`label[for="${el.id}"]`) : null;
-        return {
-          label: norm(label ? label.textContent : (el.getAttribute('aria-label') || el.name || el.id)),
-          name: el.name || el.id || '',
-          message: el.validationMessage,
-        };
-      });
-  }, { selector, formSelector }).catch(() => []);
+  const state = await page.evaluate(submitControlInPage, { selector, formSelector, mode: 'check' }).catch(() => null);
+  return state ? state.blocked : [];
 }
 
 /**
@@ -476,9 +545,11 @@ async function blockingFields(page, selector, formSelector) {
  * on `world._drupalSubmitBlocked` (an empty list after a submit that went
  * through) for the step to report or to assert on.
  *
- * `selector` may list several candidates; the first visible one is clicked,
- * and when none is visible the first match is. With no match at all the
- * nearest form is submitted natively.
+ * `selector` may list several candidates, most specific first: the first
+ * selector with a visible match is used, and a match in the main region is
+ * preferred to one in the header or a sidebar. When nothing is visible the
+ * first match is clicked, and with no match at all the form is submitted
+ * natively.
  *
  * @param {object} world - The cucumber World.
  * @param {string} selector - CSS selector(s) for the submit control.
@@ -488,20 +559,8 @@ async function blockingFields(page, selector, formSelector) {
 async function submitInPage(world, selector, formSelector) {
   const page = world.page;
   let found = false;
-  const click = () => page.evaluate(({ selector, formSelector }) => {
-    const candidates = [...document.querySelectorAll(selector)];
-    const visible = candidates.find((el) => el.offsetParent !== null) || candidates[0];
-    if (visible) {
-      visible.click();
-      return true;
-    }
-    const form = (formSelector && document.querySelector(formSelector)) || document.forms[0];
-    if (form) {
-      form.submit();
-      return true;
-    }
-    return false;
-  }, { selector, formSelector }).then((ok) => { found = ok; });
+  const click = () => page.evaluate(submitControlInPage, { selector, formSelector, mode: 'click' })
+    .then((state) => { found = Boolean(state && state.found); });
   const blocked = await blockingFields(page, selector, formSelector);
   world._drupalSubmitBlocked = blocked;
   if (blocked.length) {
@@ -561,7 +620,7 @@ async function loginWithForm(world, username, password) {
   // (milliseconds) holds the submit back for that long.
   const loginWait = Number(world.parameters && world.parameters.loginWait) || 0;
   if (loginWait > 0) await page.waitForTimeout(loginWait);
-  await submitInPage(world, '#user-login-form #edit-submit, form.user-login-form #edit-submit, #edit-submit', '#user-login-form, form.user-login-form');
+  await submitInPage(world, `${LOGIN_FORM.split(', ').map((form) => `${form} [data-drupal-selector="edit-submit"]`).join(', ')}, #user-login-form #edit-submit, #edit-submit`, LOGIN_FORM);
   if (await waitForAuthenticated(world, 2000)) return;
   // Report a refused login as what it is, instead of leaving the next step
   // to fail on a page that is still the login form.
@@ -571,14 +630,14 @@ async function loginWithForm(world, username, password) {
     throw friendly({
       message: `Logging in as "${username}" was refused.`,
       cause: text,
-      hint: 'Check the account exists on the site under test (Given I add the testing users creates the registry accounts) and that the password in worldParameters.users is current.',
+      hint: 'Accounts are part of the site\'s build: check that this one exists on the site under test and that worldParameters.users in cucumber.js names it with its current password.',
     });
   }
   if (await waitForAuthenticated(world, budget(world))) return;
   throw friendly({
     message: `Expected an authenticated session after logging in as "${username}".`,
     cause: 'The page shows no sign of a session (the "user-logged-in" body class, drupalSettings.user.uid, a logout link) and /user/login still serves the form.',
-    hint: 'Check the account exists on the site under test (Given I add the testing users creates the registry accounts) and that the password in worldParameters.users is current.',
+    hint: 'Accounts are part of the site\'s build: check that this one exists on the site under test and that worldParameters.users in cucumber.js names it with its current password.',
   });
 }
 
