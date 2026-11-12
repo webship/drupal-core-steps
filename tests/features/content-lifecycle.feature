@@ -42,10 +42,15 @@ Feature: Content lifecycle
     When I open the "Publishing options" vertical tab
     Then the checkbox labeled "Published" should be checked
 
-  Scenario: A taxonomy term is created through its vocabulary
+  Scenario: A taxonomy term is created through its vocabulary and removed again
     Given I am a logged in user with the "admin" user
+    # A run that stopped half way leaves its term behind: start clean.
+    And I delete the "tags" taxonomy terms named "Lifecycle tag"
     When I create a "tags" taxonomy term named "Lifecycle tag"
     Then I should see a status message "Created new term"
+    When I delete the "tags" taxonomy term named "Lifecycle tag"
+    And I am on "/admin/structure/taxonomy/manage/tags/overview"
+    Then I should not see "Lifecycle tag"
 
   Scenario: A content item is removed through the confirmation form
     Given I am a logged in user with the "admin" user

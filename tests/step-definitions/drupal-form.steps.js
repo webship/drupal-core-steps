@@ -6,7 +6,7 @@
 // protected form, the AJAX throbber, confirmation forms, CKEditor 5's link balloon and the
 // autocomplete suggestions of entity reference fields, plus the content a
 // scenario creates and comes back to (view, edit, delete the item it made),
-// taxonomy terms and menu links.
+// and taxonomy terms and menu links, created and removed again.
 
 const { Given, When, Then } = require('@cucumber/cucumber');
 const assert = require('assert');
@@ -16,6 +16,7 @@ const {
   VISIBLE_SUBMIT,
   supplied,
   budget,
+  joinUrl,
   navigate,
   waitForState,
   assertPresence,
@@ -569,6 +570,89 @@ When(/^(I |we )*add a menu link titled "([^"]*)" to "([^"]*)" in the "([^"]*)" m
       cause: ((await error.textContent()) || '').replace(/\s+/g, ' ').trim(),
     });
   }
+});
+
+/**
+ * The delete links of the rows of an administration listing whose title is
+ * the given text, read with the current session without leaving the page.
+ *
+ * @param {object} world - The cucumber World.
+ * @param {string} path - The listing.
+ * @param {string} title - The exact title of the row's link.
+ * @param {RegExp} pattern - What the row's own link looks like, with the id as group 1.
+ * @returns {Promise<string[]>} The ids found.
+ */
+async function listedIds(world, path, title, pattern) {
+  const url = joinUrl(world.launchUrl, path);
+  const response = await world.page.request.get(url, { failOnStatusCode: false });
+  if (response.status() !== 200) {
+    throw friendly({
+      message: `Could not read ${path}.`,
+      cause: `${url} answered ${response.status()}`,
+      hint: 'Log in first as a user who may administer the site, and check the machine name in the step.',
+    });
+  }
+  const html = await response.text();
+  return world.page.evaluate(({ html, title, source }) => {
+    const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const pattern = new RegExp(source);
+    const ids = [];
+    for (const row of doc.querySelectorAll('tr')) {
+      const links = [...row.querySelectorAll('a[href]')];
+      if (!links.some((a) => norm(a.textContent) === title)) continue;
+      for (const a of links) {
+        const match = (a.getAttribute('href') || '').match(pattern);
+        if (match && !ids.includes(match[1])) ids.push(match[1]);
+      }
+    }
+    return ids;
+  }, { html, title, source: pattern.source });
+}
+
+/**
+ * Delete the taxonomy terms with a given name from a vocabulary, through
+ * each term's delete form, so a scenario that created a term leaves the site
+ * as it found it. Passes when no such term exists.
+ *
+ * Example #1: When I delete the "tags" taxonomy term named "Playwright"
+ * Example #2: And I delete the "tags" taxonomy term named "Cucumber"
+ * Example #3: When we delete the "topics" taxonomy term named "Testing"
+ * Example #4: And I delete the "tags" term named "Release"
+ * Example #5: When I delete the "categories" taxonomy terms named "News"
+ *
+ */
+When(/^(I |we )*delete the "([^"]*)" (?:taxonomy )?terms? named "([^"]*)"$/, async function (pronounCase, vocabulary, name) {
+  const ids = await listedIds(this, `/admin/structure/taxonomy/manage/${vocabulary}/overview`, name, /\/taxonomy\/term\/(\d+)(?:\/|\?|$)/);
+  for (const id of ids) {
+    await navigate(this, `/taxonomy/term/${id}/delete`);
+    await waitForState(this.page.locator('form.confirmation, form[id$="-delete-form"]').first(), 'attached', `Expected the delete form of term ${id}`);
+    await submitInPage(this, 'form.confirmation [data-drupal-selector="edit-submit"], form[id$="-delete-form"] [data-drupal-selector="edit-submit"], #edit-submit', 'form.confirmation');
+  }
+  this.attach(`taxonomy terms named "${name}" removed: ${ids.length}`);
+});
+
+/**
+ * Delete the links with a given title from a menu, through each link's
+ * delete form, so a scenario that added a menu link leaves the site as it
+ * found it. Only links created on the site are removed (the links a module
+ * defines cannot be deleted). Passes when no such link exists.
+ *
+ * Example #1: When I delete the menu link titled "Sample" from the "main" menu
+ * Example #2: And I delete the menu link titled "Home page" from the "main" menu
+ * Example #3: When we delete the menu link titled "Drupal" from the "footer" menu
+ * Example #4: And I delete the menu links titled "Log in" from the "account" menu
+ * Example #5: When I delete the menu links titled "Node one" from the "main" menu
+ *
+ */
+When(/^(I |we )*delete the menu links? titled "([^"]*)" from the "([^"]*)" menu$/, async function (pronounCase, title, menu) {
+  const ids = await listedIds(this, `/admin/structure/menu/manage/${menu}`, title, /\/admin\/structure\/menu\/item\/(\d+)\/(?:edit|delete)/);
+  for (const id of ids) {
+    await navigate(this, `/admin/structure/menu/item/${id}/delete`);
+    await waitForState(this.page.locator('form.confirmation, form[id$="-delete-form"]').first(), 'attached', `Expected the delete form of menu link ${id}`);
+    await submitInPage(this, 'form.confirmation [data-drupal-selector="edit-submit"], form[id$="-delete-form"] [data-drupal-selector="edit-submit"], #edit-submit', 'form.confirmation');
+  }
+  this.attach(`menu links titled "${title}" removed: ${ids.length}`);
 });
 
 module.exports = { rememberCreated, toggleFormSection, operateFormSection };

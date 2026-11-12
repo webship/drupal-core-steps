@@ -6,7 +6,9 @@ Feature: Layout Builder
   Scenario: A section is added to an article's layout, saved and reverted
     Given I am a logged in user with the "admin" user
     And I am on "/sample-article"
-    When I open the layout of the content item I am viewing
+    # A run that stopped half way leaves unsaved changes behind: start clean.
+    When I discard the layout changes
+    And I open the layout of the content item I am viewing
     Then the layout should have 1 section
     When I add a "Two column" section at the end of the layout
     And I save the section
