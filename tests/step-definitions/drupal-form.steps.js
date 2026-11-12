@@ -2,8 +2,8 @@
 
 // Steps for the pieces of core's forms and admin UI that a scenario has to
 // operate rather than merely see: the sections of a form (vertical tabs or
-// collapsible details, whichever the theme renders), the AJAX throbber,
-// confirmation forms, CKEditor 5's link balloon and the
+// collapsible details, whichever the theme renders), the time limit of a
+// protected form, the AJAX throbber, confirmation forms, CKEditor 5's link balloon and the
 // autocomplete suggestions of entity reference fields, plus the content a
 // scenario creates and comes back to (view, edit, delete the item it made),
 // taxonomy terms and menu links.
@@ -37,7 +37,7 @@ function escapeRe(s) {
 }
 
 // ---------------------------------------------------------------------------
-// Form sections (vertical tabs and details), AJAX
+// Form sections (vertical tabs and details), protected forms, AJAX
 // ---------------------------------------------------------------------------
 
 /**
@@ -182,6 +182,58 @@ When(/^(I |we )*(expand|collapse|open|close) the "([^"]*)" details$/, async func
  */
 When(/^(I |we )*open the "([^"]*)" vertical tab$/, async function (pronounCase, title) {
   await operateFormSection(this, title, true);
+});
+
+/**
+ * Wait out the time limit a form protection sets before it accepts a
+ * submission. A module such as Honeypot refuses a form sent sooner than its
+ * time limit after the page was served, which is how fast a browser test
+ * fills it. The step waits `worldParameters.formWait` milliseconds (5000
+ * when it is not set), or the number of seconds the step names.
+ *
+ * This is a real wait, on purpose: webship-js's "I wait 5 seconds" is a
+ * budget for the page to settle and returns as soon as it has, so it does
+ * not hold a form back. Use this step only in front of the submit of a
+ * protected form.
+ *
+ * Example #1: When I wait out the form time limit
+ * Example #2: And I wait out the form time limit
+ * Example #3: When we wait out the form time limit
+ * Example #4: And I wait out the form time limit of 6 seconds
+ * Example #5: When I wait out the form time limit of 1 second
+ *
+ */
+When(/^(I |we )*wait out the form time limit(?: of (\d+) seconds?)?$/, async function (pronounCase, seconds) {
+  const configured = Number(this.parameters && this.parameters.formWait);
+  const wait = supplied(seconds) ? parseInt(seconds, 10) * 1000 : (Number.isFinite(configured) && configured >= 0 ? configured : 5000);
+  // Kept below the step timeout so the step never fails by itself.
+  await this.page.waitForTimeout(Math.min(wait, WAIT_TIMEOUT));
+});
+
+/**
+ * Assert the page on screen has been open for at least a number of seconds,
+ * by the browser's own clock for the page (`performance.now()`, the time
+ * since the page began to load). It proves a wait in front of a protected
+ * form was long enough for the form's time limit.
+ *
+ * Example #1: Then the page should have been open for at least 2 seconds
+ * Example #2: And the page should have been open for at least 5 seconds
+ * Example #3: Then the page should have been open for at least 1 second
+ * Example #4: And the form should have been open for at least 6 seconds
+ * Example #5: Then the form should have been open for at least 3 seconds
+ *
+ */
+Then(/^the (?:page|form) should have been open for at least (\d+) seconds?$/, async function (seconds) {
+  const elapsed = await this.page.evaluate(() => performance.now());
+  const want = parseInt(seconds, 10) * 1000;
+  assert.ok(
+    elapsed >= want,
+    friendly({
+      message: `Expected the page to have been open for at least ${seconds} second(s).`,
+      cause: `it has been open for ${(elapsed / 1000).toFixed(1)} second(s)`,
+      hint: 'Put "I wait out the form time limit" in front of the submit of a form that a time limit protects.',
+    }).message
+  );
 });
 
 /**

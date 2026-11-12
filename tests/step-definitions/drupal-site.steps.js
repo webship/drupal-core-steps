@@ -1,8 +1,9 @@
 'use strict';
 
 // Steps about how a site is built: which modules are installed, which theme is
-// the default, which roles and menus exist, what the front page is, and the
-// canonical URL and meta tags of a page. The administration pages are read
+// the default, which roles and menus exist and what a role is permitted, what
+// the status report counts, what the front page is, and the canonical URL and
+// meta tags of a page. None of them needs a command line. The administration pages are read
 // with the current session through the browser's request context, so the
 // page on screen is left alone; the theme settings step navigates.
 //
@@ -176,6 +177,223 @@ Then(/^the "([^"]*)" role should( not)* exist$/, async function (label, notCase)
 });
 
 /**
+ * The machine name of a role, from its label ("Content editor") or from the
+ * machine name itself ("content_editor"), as the Roles page
+ * (`/admin/people/roles`) lists it.
+ *
+ * @param {object} world
+ * @param {string} role
+ * @returns {Promise<{id: string, label: string}>}
+ */
+async function resolveRole(world, role) {
+  const html = await adminHtml(world, '/admin/people/roles', 'the Roles page (/admin/people/roles)');
+  const roles = [];
+  for (const row of html.match(/<tr[\s\S]*?<\/tr>/g) || []) {
+    const link = row.match(/href="[^"]*\/admin\/people\/(?:roles\/manage|permissions)\/([a-z0-9_]+)"/);
+    if (!link) continue;
+    const cell = row.match(/<td[^>]*>([\s\S]*?)<\/td>/);
+    roles.push({ id: link[1], label: cell ? textOf(cell[1]).replace(/\s*\(.*\)\s*$/, '') : link[1] });
+  }
+  const wanted = role.trim().toLowerCase();
+  const found = roles.find((r) => r.label.toLowerCase() === wanted) || roles.find((r) => r.id === wanted);
+  if (!found) {
+    throw friendly({
+      message: `No "${role}" role exists on the site.`,
+      cause: roles.length ? `the roles are: ${roles.map((r) => `${r.label} (${r.id})`).join(', ')}` : 'the Roles page lists no role',
+      hint: 'Pass the role label as /admin/people/roles shows it, or its machine name.',
+    });
+  }
+  return found;
+}
+
+/**
+ * Assert a role is, or is not, granted a permission, as the role's
+ * permissions form (`/admin/people/permissions/<role>`) shows it: the
+ * permission's checkbox is ticked. The role is named by its label or its
+ * machine name; the permission by its machine name ("create article
+ * content") or by its title on the form ("Article: Create new content").
+ * No command line is involved, so the check runs against any site the suite
+ * can log in to.
+ *
+ * It reports what the role itself is granted. A permission of the
+ * "Authenticated user" role applies to every account that is logged in,
+ * without being ticked for the other roles.
+ *
+ * Example #1: Then the "Content editor" role should have the "access content overview" permission
+ * Example #2: And the "content_editor" role should have the "access administration pages" permission
+ * Example #3: Then the "Anonymous user" role should not have the "administer nodes" permission
+ * Example #4: And the "Authenticated user" role should have the "View published content" permission
+ * Example #5: Then the "Content editor" role should not have the "administer users" permission
+ *
+ */
+Then(/^the "([^"]*)" role should( not)* have the "([^"]*)" permission$/, async function (role, notCase, permission) {
+  const found = await resolveRole(this, role);
+  const html = await adminHtml(this, `/admin/people/permissions/${found.id}`, `the permissions form of the "${found.label}" role`);
+  const state = await this.page.evaluate(({ html, rid, permission }) => {
+    const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const boxes = [...doc.querySelectorAll(`input[type="checkbox"][name^="${rid}["]`)];
+    const wanted = norm(permission).toLowerCase();
+    let box = boxes.find((el) => el.name === `${rid}[${permission}]`);
+    if (!box) {
+      // By the title the form prints: the row's first cell, or the label of
+      // the checkbox ("<Role>: <Title>").
+      box = boxes.find((el) => {
+        const row = el.closest('tr');
+        const title = row ? row.querySelector('.permission .title, td:first-child .title, td:first-child') : null;
+        if (title && norm(title.textContent).toLowerCase() === wanted) return true;
+        const label = el.id ? doc.querySelector(`label[for="${el.id}"]`) : null;
+        return Boolean(label) && norm(label.textContent).toLowerCase().endsWith(`: ${wanted}`);
+      });
+    }
+    return { known: Boolean(box), granted: Boolean(box && box.checked), count: boxes.length };
+  }, { html, rid: found.id, permission });
+  if (!state.known) {
+    throw friendly({
+      message: `No "${permission}" permission is listed for the "${found.label}" role.`,
+      cause: `the permissions form lists ${state.count} permission(s)`,
+      hint: 'Pass the permission machine name ("create article content") or its title as the form prints it ("Article: Create new content"). A permission exists only while the module that defines it is installed.',
+    });
+  }
+  assert.ok(
+    notCase ? !state.granted : state.granted,
+    friendly({
+      message: notCase
+        ? `Expected the "${found.label}" role not to have the "${permission}" permission.`
+        : `Expected the "${found.label}" role to have the "${permission}" permission.`,
+      cause: `the permissions form shows it ${state.granted ? 'granted' : 'not granted'}`,
+    }).message
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Status report
+// ---------------------------------------------------------------------------
+
+/**
+ * Read the status report (`/admin/reports/status`) with the current session:
+ * how many errors, warnings and passed checks it counts, and the titles of
+ * the entries in each group. Core 11 and core 12 print the same counters
+ * (`.system-status-counter--error`, `--warning`, `--checked`) and group the
+ * entries under a summary with the id `error`, `warning` or `checked`; when
+ * a theme prints neither, the counts are read from the text ("3 Warnings").
+ *
+ * @param {object} world
+ * @returns {Promise<{counts: {error: number, warning: number, checked: number}, entries: {error: string[], warning: string[], checked: string[]}}>}
+ */
+async function readStatusReport(world) {
+  const html = await adminHtml(world, '/admin/reports/status', 'the status report (/admin/reports/status)');
+  return world.page.evaluate((html) => {
+    const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const counts = { error: 0, warning: 0, checked: 0 };
+    const entries = { error: [], warning: [], checked: [] };
+    const text = norm(doc.body ? doc.body.textContent : '');
+    const words = { error: /(\d+)\s+Errors?\b/i, warning: /(\d+)\s+Warnings?\b/i, checked: /(\d+)\s+Checked\b/i };
+    for (const key of Object.keys(counts)) {
+      const group = doc.querySelector(`summary#${key}`);
+      const details = group ? group.closest('details') : null;
+      if (details) {
+        const titles = [...details.querySelectorAll('.system-status-report__status-title, [class*="status-title"]')]
+          .filter((el) => !el.matches('summary') && !el.closest('summary'))
+          .map((el) => norm(el.textContent))
+          .filter(Boolean);
+        entries[key] = [...new Set(titles)];
+      }
+      const counter = doc.querySelector(`.system-status-counter--${key}`);
+      const fromCounter = counter ? (norm(counter.textContent).match(/\d+/) || [])[0] : undefined;
+      const fromText = (text.match(words[key]) || [])[1];
+      if (fromCounter !== undefined) counts[key] = parseInt(fromCounter, 10);
+      else if (entries[key].length) counts[key] = entries[key].length;
+      else if (fromText !== undefined) counts[key] = parseInt(fromText, 10);
+    }
+    return { counts, entries };
+  }, html);
+}
+
+/**
+ * Assert the status report (`/admin/reports/status`) counts no errors or no
+ * warnings, or that it does. The report is read with the current session,
+ * so the page on screen is left alone. A failure names the entries, which is
+ * what a person opens the report for.
+ *
+ * Example #1: Then the status report should have no errors
+ * Example #2: And the status report should not have any errors
+ * Example #3: Then the status report should have no warnings
+ * Example #4: And the status report should have errors
+ * Example #5: Then the status report should have warnings
+ *
+ */
+Then(/^the status report should (have no|not have any|not have|have) (errors|warnings)$/, async function (polarity, kind) {
+  const key = kind === 'errors' ? 'error' : 'warning';
+  const report = await readStatusReport(this);
+  const count = report.counts[key];
+  const wantNone = polarity !== 'have';
+  assert.ok(
+    wantNone ? count === 0 : count > 0,
+    friendly({
+      message: wantNone ? `Expected the status report to have no ${kind}.` : `Expected the status report to have ${kind}.`,
+      cause: count
+        ? `it counts ${count}: ${report.entries[key].join(', ') || 'the entries could not be read'}`
+        : `it counts none (${report.counts.error} error(s), ${report.counts.warning} warning(s), ${report.counts.checked} checked)`,
+      hint: 'Open /admin/reports/status as an administrator for the full text of each entry.',
+    }).message
+  );
+});
+
+/**
+ * Assert how many errors or warnings the status report counts, for a site
+ * whose known, accepted findings are part of its definition (a local build
+ * always warns that `settings.php` is writable).
+ *
+ * Example #1: Then the status report should count 0 errors
+ * Example #2: And the status report should count 1 error
+ * Example #3: Then the status report should count 3 warnings
+ * Example #4: And the status report should count at most 3 warnings
+ * Example #5: Then the status report should count at most 0 errors
+ *
+ */
+Then(/^the status report should count (at most )?(\d+) (errors?|warnings?)$/, async function (atMost, expected, kind) {
+  const key = kind.startsWith('error') ? 'error' : 'warning';
+  const report = await readStatusReport(this);
+  const count = report.counts[key];
+  const want = parseInt(expected, 10);
+  assert.ok(
+    supplied(atMost) ? count <= want : count === want,
+    friendly({
+      message: `Expected the status report to count ${supplied(atMost) ? 'at most ' : ''}${want} ${key}(s).`,
+      cause: `it counts ${count}${report.entries[key].length ? `: ${report.entries[key].join(', ')}` : ''}`,
+    }).message
+  );
+});
+
+/**
+ * Assert the status report lists, or does not list, an entry among its
+ * errors or its warnings, by the entry's title ("Configuration files",
+ * "Trusted Host Settings", "Cron maintenance tasks").
+ *
+ * Example #1: Then the status report should list the warning "Configuration files"
+ * Example #2: And the status report should not list the error "Trusted Host Settings"
+ * Example #3: Then the status report should list the error "Database updates"
+ * Example #4: And the status report should not list the warning "Cron maintenance tasks"
+ * Example #5: Then the status report should not list the error "Configuration files"
+ *
+ */
+Then(/^the status report should( not)* list the (error|warning) "([^"]*)"$/, async function (notCase, key, title) {
+  const report = await readStatusReport(this);
+  const found = report.entries[key].some((entry) => entry.toLowerCase() === title.trim().toLowerCase());
+  assert.ok(
+    notCase ? !found : found,
+    friendly({
+      message: notCase
+        ? `Expected the status report not to list the ${key} "${title}".`
+        : `Expected the status report to list the ${key} "${title}".`,
+      cause: report.entries[key].length ? `its ${key}s are: ${report.entries[key].join(', ')}` : `it lists no ${key}`,
+    }).message
+  );
+});
+
+/**
  * Assert a menu contains, or does not contain, a link with a given title, by
  * the menu's label ("Main navigation") or machine name ("main"), as the
  * menu's edit page lists its links (disabled links included).
@@ -316,4 +534,4 @@ Then(/^the "([^"]*)" meta tag should( not)* (be|contain) "([^"]*)"$/, async func
   );
 });
 
-module.exports = { adminHtml, textOf };
+module.exports = { adminHtml, textOf, resolveRole, readStatusReport };
