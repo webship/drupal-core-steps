@@ -2,7 +2,8 @@
 
 // Steps for core's Layout Builder: opening the layout of a content item,
 // adding a section with one of core's layouts, saving the section and the
-// layout, counting sections, and reverting an override. They work on the
+// layout, counting sections, discarding unsaved changes and reverting an
+// override. They work on the
 // builder page (`/node/<nid>/layout`) and its off-canvas dialog, which is
 // where core puts the section forms.
 
@@ -154,6 +155,34 @@ Then(/^the layout should( not)* have (\d+) sections?$/, async function (notCase,
       cause: `it has ${n}`,
     });
   }
+});
+
+/**
+ * Discard the unsaved changes of the layout of the content item on screen,
+ * through core's own form (`/node/<nid>/layout/discard-changes`). Layout
+ * Builder keeps unsaved changes for the user until they are saved or
+ * discarded, so a scenario that stopped half way leaves some behind; a
+ * scenario that starts with this step always starts from the saved layout.
+ *
+ * Example #1: When I discard the layout changes
+ * Example #2: And I discard the layout changes
+ * Example #3: When we discard the layout changes
+ * Example #4: Given I discard the unsaved layout changes
+ * Example #5: And we discard the unsaved layout changes
+ *
+ */
+When(/^(I |we )*discard the (?:unsaved )?layout changes$/, async function (pronounCase) {
+  const nid = await currentNodeId(this.page);
+  if (!nid) {
+    throw friendly({
+      message: 'Could not determine which content item is being viewed.',
+      hint: 'Open the content item (or its layout) first.',
+    });
+  }
+  await navigate(this, `/node/${nid}/layout/discard-changes`);
+  const confirm = this.page.locator('form.confirmation #edit-submit, ' + VISIBLE_SUBMIT).first();
+  await waitForState(confirm, 'visible', `Expected the discard confirmation form on /node/${nid}/layout/discard-changes (is the layout overridable for this content type?)`);
+  await submitInPage(this, 'form.confirmation [data-drupal-selector="edit-submit"], form.confirmation #edit-submit, #edit-submit', 'form.confirmation');
 });
 
 /**
