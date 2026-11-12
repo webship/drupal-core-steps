@@ -5,10 +5,21 @@
 // Not a step file: it registers no step definitions and no hooks. It holds the
 // plumbing `drupal-core.steps.js` uses and that downstream packs (for example
 // `@webship-js/drupal-cms-steps`) can require instead of copying: optional
-// argument handling, presence and text assertions, the users registry, the
-// robust in-page form submit used to log in, Form API field resolution,
-// CKEditor 5 data writing, checkbox state lookups and a session-aware status
-// probe.
+// argument handling, presence and text assertions, the named selectors of the
+// preset, what a page says about itself (`drupalSettings`, the document
+// title, its messages), the users registry, the robust in-page form submit
+// used to log in, Form API field resolution, CKEditor 5 data writing, checkbox
+// state lookups and a session-aware status probe.
+//
+// How the steps find things, in this order:
+//
+//   1. what core states regardless of the theme: `drupalSettings`, ARIA roles
+//      and labels, `data-drupal-*` attributes, Form API ids, the HTTP answer;
+//   2. the class names core's own themes print (`.messages--status`,
+//      `body.path-frontpage`, `h1.page-title`), as a fallback;
+//   3. a named selector of `tests/selectors/drupal-core.json`, which a project
+//      overrides in `worldParameters.selectors` when its theme prints
+//      something else.
 //
 // Everything here builds on webship-js's own helpers (`gotoUrl`, `smartSettle`,
 // `friendly`) so the steps behave like the core webship-js steps.
@@ -30,6 +41,10 @@ const WAIT_TIMEOUT = 30000;
 // not share core's HTML-id dedup registry. Every submit click goes through the
 // visible one.
 const VISIBLE_SUBMIT = '#edit-submit:visible';
+
+// The login form, by the selector Form API states for it whatever the theme,
+// then by the id and class core derives from the form's machine name.
+const LOGIN_FORM = 'form[data-drupal-selector="user-login-form"], #user-login-form, form.user-login-form';
 
 /**
  * Whether an optional step argument was actually supplied.
@@ -167,6 +182,213 @@ async function assertContainsText(locator, expectedText, label, options = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Named selectors and what the page says about itself
+// ---------------------------------------------------------------------------
+
+/**
+ * The CSS selector a name of the selector registry stands for: the project's
+ * own value when it set one (`worldParameters.selectors.css` or a selectors
+ * file), else the pack's preset, else the fallback given here. This is how a
+ * theme that prints other markup than core's themes is taught to the steps
+ * without touching them.
+ *
+ * @param {object} world - The cucumber World.
+ * @param {string} name - A registry name, for example "status message".
+ * @param {string} fallback - The selector to use when the name is not set.
+ * @returns {string}
+ */
+function namedSelector(world, name, fallback) {
+  const css = world && world.__selectorsCss && world.__selectorsCss[name];
+  return (typeof css === 'string' && css.trim()) ? css : fallback;
+}
+
+/**
+ * Poll a check until it returns a truthy value or the time is up.
+ *
+ * @param {function(): Promise<*>} check
+ * @param {number} timeout - Milliseconds.
+ * @param {import('playwright').Page} page
+ * @returns {Promise<*>} The last value the check returned.
+ */
+async function pollUntil(check, timeout, page) {
+  const deadline = Date.now() + timeout;
+  for (;;) {
+    const value = await check();
+    if (value || Date.now() >= deadline) return value;
+    await page.waitForTimeout(200);
+  }
+}
+
+/**
+ * What the page says about itself, read in one pass: core's settings payload
+ * (`drupalSettings.path`, also when the script that builds the object never
+ * ran: the JSON of the `drupal-settings-json` tag is parsed directly), the
+ * document title, the body classes, the visible headings and the path.
+ *
+ * @param {import('playwright').Page} page
+ * @param {string} [titleSelector] - The "page title" selector.
+ * @returns {Promise<{path: object|null, uid: number|null, title: string, bodyClasses: string[], headings: string[], pathname: string}>}
+ */
+async function pageFacts(page, titleSelector) {
+  return page.evaluate((titleSelector) => {
+    const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+    const visible = (el) => Boolean(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+    let settings = (typeof window.drupalSettings === 'object' && window.drupalSettings) || null;
+    if (!settings) {
+      const tag = document.querySelector('script[data-drupal-selector="drupal-settings-json"]');
+      try { settings = tag ? JSON.parse(tag.textContent) : null; } catch (e) { settings = null; }
+    }
+    let headings = [];
+    try {
+      const all = [...document.querySelectorAll(titleSelector || 'h1')].filter(visible);
+      // The heading of the main region comes first: a theme may print the
+      // site name as an <h1> in its header.
+      const main = all.filter((el) => el.closest('main, [role="main"], #main-content, #content'));
+      headings = [...main, ...all.filter((el) => !main.includes(el))].map((el) => norm(el.innerText || el.textContent));
+    } catch (e) {
+      headings = [];
+    }
+    return {
+      path: (settings && settings.path) || null,
+      uid: settings && settings.user ? Number(settings.user.uid) : null,
+      title: norm(document.title),
+      bodyClasses: document.body ? [...document.body.classList] : [],
+      headings,
+      pathname: window.location.pathname,
+    };
+  }, titleSelector || null);
+}
+
+// The three kinds of message core renders, with the registry name of each and
+// the heading core's template gives it (the `aria-label` of the message).
+const MESSAGE_TYPES = {
+  status: {
+    name: 'status message',
+    label: 'Status message',
+    fallback: '[aria-label="Status message"], [data-drupal-messages] [role="status"], .messages--status, [data-drupal-messages] .uk-alert-success',
+  },
+  warning: {
+    name: 'warning message',
+    label: 'Warning message',
+    fallback: '[aria-label="Warning message"], .messages--warning, [data-drupal-messages] .uk-alert-warning',
+  },
+  error: {
+    name: 'error message',
+    label: 'Error message',
+    fallback: '[aria-label="Error message"], [data-drupal-messages] [role="alert"], .messages--error, [data-drupal-messages] .uk-alert-danger',
+  },
+};
+
+/**
+ * The selector of one kind of message.
+ *
+ * @param {object} world - The cucumber World.
+ * @param {'status'|'warning'|'error'} type
+ * @returns {string}
+ */
+function messageSelector(world, type) {
+  return namedSelector(world, MESSAGE_TYPES[type].name, MESSAGE_TYPES[type].fallback);
+}
+
+/**
+ * The messages on screen. `typed` holds the text of every visible message of
+ * the asked kind; `untyped` holds the text of a messages region
+ * (`[data-drupal-messages]`) whose theme prints nothing that tells the kinds
+ * apart, so a step can still find a message by its text there; `others`
+ * names the other kinds on screen, for the error a failing step reports.
+ *
+ * @param {object} world - The cucumber World.
+ * @param {'status'|'warning'|'error'} type
+ * @returns {Promise<{typed: string[], untyped: string[], others: string[]}>}
+ */
+async function readMessages(world, type) {
+  const selectors = {};
+  for (const key of Object.keys(MESSAGE_TYPES)) selectors[key] = messageSelector(world, key);
+  const region = namedSelector(world, 'messages', '[data-drupal-messages], .messages');
+  return world.page.evaluate(({ type, selectors, region }) => {
+    const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+    const visible = (el) => Boolean(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+    const all = (selector) => {
+      try { return [...document.querySelectorAll(selector)].filter(visible); } catch (e) { return []; }
+    };
+    const typed = all(selectors[type]).map((el) => norm(el.innerText || el.textContent)).filter(Boolean);
+    const others = [];
+    for (const key of Object.keys(selectors)) {
+      if (key !== type && all(selectors[key]).length) others.push(key);
+    }
+    const anyTyped = Object.keys(selectors).map((key) => selectors[key]).join(', ');
+    const untyped = all(region)
+      .filter((el) => {
+        try { return !el.matches(anyTyped) && !el.querySelector(anyTyped); } catch (e) { return true; }
+      })
+      .map((el) => norm(el.innerText || el.textContent))
+      .filter(Boolean);
+    return { typed, untyped, others };
+  }, { type, selectors, region });
+}
+
+/**
+ * Assert a message of one kind is, or is not, on screen, optionally with a
+ * text it must contain (whitespace-collapsed, case-sensitive).
+ *
+ * The message is found by what core states for it (the `aria-label` of
+ * core's message template, the `status` and `alert` roles inside the
+ * `data-drupal-messages` region), then by the classes of core's themes, or by
+ * the "status message", "warning message" and "error message" named
+ * selectors when the project set them. In a messages region that tells no
+ * kinds apart, a message is still found by its text.
+ *
+ * @param {object} world - The cucumber World.
+ * @param {'status'|'warning'|'error'} type
+ * @param {string|null|undefined} negated - The captured " not" group, if any.
+ * @param {string|null|undefined} expectedText
+ * @returns {Promise<void>}
+ */
+async function assertMessage(world, type, negated, expectedText) {
+  const hasText = supplied(expectedText) && expectedText.trim() !== '';
+  const wanted = hasText ? expectedText.replace(/\s+/g, ' ').trim() : '';
+  let seen = { typed: [], untyped: [], others: [] };
+  const check = async () => {
+    seen = await readMessages(world, type).catch(() => ({ typed: [], untyped: [], others: [] }));
+    const shown = hasText
+      ? seen.typed.some((text) => text.includes(wanted)) || seen.untyped.some((text) => text.includes(wanted))
+      : seen.typed.length > 0;
+    return negated ? !shown : shown;
+  };
+  if (await pollUntil(check, negated ? budget(world) : WAIT_TIMEOUT, world.page)) return;
+  const kind = type === 'error' ? 'an error message' : `a ${type} message`;
+  const shown = seen.typed.length
+    ? `the ${type} message${seen.typed.length > 1 ? 's read' : ' reads'}: ${seen.typed.map((text) => `"${text.slice(0, 200)}"`).join(' | ')}`
+    : (seen.untyped.length
+      ? `the messages region reads "${seen.untyped.join(' | ').slice(0, 300)}" and nothing in it tells a ${type} message apart`
+      : `the page shows no ${type} message${seen.others.length ? ` (it shows: ${seen.others.join(', ')})` : ''}`);
+  throw friendly({
+    message: negated
+      ? `Expected ${hasText ? `no ${type} message containing "${wanted}"` : `no ${type} message`}.`
+      : `Expected ${kind}${hasText ? ` containing "${wanted}"` : ''}.`,
+    cause: shown,
+    hint: `A message is found by its aria-label ("${MESSAGE_TYPES[type].label}"), its role inside [data-drupal-messages] or the classes of core's themes. For a theme that prints something else, set the "${MESSAGE_TYPES[type].name}" named selector in worldParameters.selectors.css.`,
+  });
+}
+
+/**
+ * The text of the first visible error on screen (a field error or an error
+ * message), or an empty string. For the cause a failing step reports.
+ *
+ * @param {object} world - The cucumber World.
+ * @returns {Promise<string>}
+ */
+async function firstErrorText(world) {
+  const selector = `.form-item--error-message, ${messageSelector(world, 'error')}`;
+  return world.page.evaluate((selector) => {
+    const visible = (el) => Boolean(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+    let found = [];
+    try { found = [...document.querySelectorAll(selector)].filter(visible); } catch (e) { found = []; }
+    return found.length ? (found[0].innerText || found[0].textContent || '').replace(/\s+/g, ' ').trim() : '';
+  }, selector).catch(() => '');
+}
+
+// ---------------------------------------------------------------------------
 // Users registry
 // ---------------------------------------------------------------------------
 
@@ -276,11 +498,9 @@ async function loginWithForm(world, username, password) {
   if (await waitForAuthenticated(world, 2000)) return;
   // Report a refused login as what it is, instead of leaving the next step
   // to fail on a page that is still the login form.
-  const form = page.locator('#user-login-form, form.user-login-form').first();
+  const form = page.locator(LOGIN_FORM).first();
   if (await form.isVisible().catch(() => false)) {
-    const error = page.locator('.form-item--error-message, .messages--error, [aria-label="Error message"]').first();
-    const shown = await error.isVisible({ timeout: 500 }).catch(() => false);
-    const text = shown ? ((await error.textContent()) || '').replace(/\s+/g, ' ').trim() : 'the login form is still shown';
+    const text = (await firstErrorText(world)) || 'the login form is still shown';
     throw friendly({
       message: `Logging in as "${username}" was refused.`,
       cause: text,
@@ -564,10 +784,39 @@ async function sessionStatus(page, url) {
   return response.status();
 }
 
+/**
+ * Request a URL as a visitor with no session at all (a request context of its
+ * own, with none of the browser's cookies) and return the HTTP status. For
+ * the questions only the site can answer for a visitor: is this item
+ * published, is this page public.
+ *
+ * @param {string} url - An absolute URL.
+ * @returns {Promise<number>}
+ */
+async function visitorStatus(url) {
+  const { request } = require('playwright');
+  const context = await request.newContext({ ignoreHTTPSErrors: true });
+  try {
+    const response = await context.get(url, { failOnStatusCode: false });
+    return response.status();
+  } finally {
+    await context.dispose();
+  }
+}
+
 module.exports = {
   WAIT_TIMEOUT,
   VISIBLE_SUBMIT,
+  LOGIN_FORM,
+  MESSAGE_TYPES,
   supplied,
+  namedSelector,
+  pollUntil,
+  pageFacts,
+  messageSelector,
+  readMessages,
+  assertMessage,
+  firstErrorText,
   budget,
   joinUrl,
   navigate,
@@ -586,5 +835,6 @@ module.exports = {
   checkboxStateByHandle,
   waitForMatch,
   sessionStatus,
+  visitorStatus,
   currentNodeId,
 };

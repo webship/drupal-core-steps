@@ -44,8 +44,14 @@ const {
 const {
   WAIT_TIMEOUT,
   VISIBLE_SUBMIT,
+  LOGIN_FORM,
   supplied,
   budget,
+  joinUrl,
+  namedSelector,
+  pollUntil,
+  pageFacts,
+  assertMessage,
   navigate,
   waitForState,
   assertPresence,
@@ -59,6 +65,7 @@ const {
   checkboxStateByHandle,
   sessionStatus,
   currentNodeId,
+  visitorStatus,
   waitForAuthenticated,
 } = require('./drupal-helpers');
 
@@ -136,7 +143,7 @@ const ROUTES = {
 // suffixing (`#user-login-form--2`) that happens when a form is rendered twice.
 const FORMS = {
   login: {
-    selector: '#user-login-form, form.user-login-form',
+    selector: LOGIN_FORM,
     fields: ['#edit-name', '#edit-pass'],
   },
   registration: {
@@ -160,6 +167,10 @@ const FORMS = {
     fields: ['#edit-site-name'],
   },
 };
+
+// The breadcrumb: the navigation landmark core's template labels, then the
+// class of core's themes.
+const BREADCRUMB = 'nav[aria-labelledby="system-breadcrumb"], [aria-label="Breadcrumb"], .breadcrumb';
 
 // Titles core's System module gives its default error pages.
 const ERROR_PAGES = {
@@ -344,8 +355,11 @@ Then(/^the core (?:JavaScript|javascript) settings should( not)* be initialized$
 // ---------------------------------------------------------------------------
 
 /**
- * Assert the current page is — or is not — the route configured as the site's
- * front page, via the `path-frontpage` body class.
+ * Assert the current page is, or is not, the route configured as the site's
+ * front page. Core says so itself in `drupalSettings.path.isFront`, whatever
+ * the theme; where a page carries no settings, the `path-frontpage` body
+ * class of core's themes (the "front page" named selector) and then the URL
+ * decide.
  *
  * Deliberately does not accept the one-word "frontpage": webship-js's own
  * "should be on the frontpage" already claims that phrasing (it compares URLs),
@@ -359,20 +373,36 @@ Then(/^the core (?:JavaScript|javascript) settings should( not)* be initialized$
  *
  */
 Then(/^(I |we )*should( not)* (?:be on|land on) the front page$/, async function (pronounCase, notCase) {
-  await assertPresence(
-    this.page.locator('body.path-frontpage'),
-    notCase,
-    'the front page body class ("body.path-frontpage")',
-    { attached: true }
-  );
+  const marker = namedSelector(this, 'front page', 'body.path-frontpage');
+  const base = new URL(joinUrl(this.launchUrl, '/')).pathname.replace(/\/+$/, '');
+  let seen = { front: false, by: 'nothing' };
+  const check = async () => {
+    const facts = await pageFacts(this.page);
+    if (facts.path && typeof facts.path.isFront === 'boolean') {
+      seen = { front: facts.path.isFront, by: `drupalSettings.path.isFront is ${facts.path.isFront}` };
+    } else if (await this.page.locator(marker).count()) {
+      seen = { front: true, by: `the page matches "${marker}"` };
+    } else {
+      seen = { front: facts.pathname.replace(/\/+$/, '') === base, by: `the page carries no settings and its path is "${facts.pathname}"` };
+    }
+    return notCase ? !seen.front : seen.front;
+  };
+  if (await pollUntil(check, budget(this), this.page)) return;
+  throw friendly({
+    message: notCase ? 'Expected not to be on the front page.' : 'Expected to be on the front page.',
+    cause: seen.by,
+    hint: 'The front page is the path set at /admin/config/system/site-information.',
+  });
 });
 
 /**
- * Assert the current page is — or is not — one of the site's administration
- * pages, via the `path-admin` body class core adds for any route flagged as an
- * admin route. That flag, not the URL prefix, is what decides whether the admin
- * theme is used, so this is the assertion that matches what a site actually
- * treats as "admin".
+ * Assert the current page is, or is not, one of the site's administration
+ * pages. Core flags its admin routes and says so in
+ * `drupalSettings.path.currentPathIsAdmin`, whatever the theme; that flag,
+ * not the URL prefix, is what decides whether the administration theme is
+ * used. Where a page carries no settings, the `path-admin` body class of
+ * core's themes (the "admin page" named selector) and then the `/admin` URL
+ * prefix decide.
  *
  * Example #1: Then I should be on an admin page
  * Example #2: And we should be on an administration page
@@ -382,12 +412,26 @@ Then(/^(I |we )*should( not)* (?:be on|land on) the front page$/, async function
  *
  */
 Then(/^(I |we )*should( not)* be on an admin(?:istration)? page$/, async function (pronounCase, notCase) {
-  await assertPresence(
-    this.page.locator('body.path-admin'),
-    notCase,
-    'the administration body class ("body.path-admin")',
-    { attached: true }
-  );
+  const marker = namedSelector(this, 'admin page', 'body.path-admin');
+  const base = new URL(joinUrl(this.launchUrl, '/')).pathname.replace(/\/+$/, '');
+  let seen = { admin: false, by: 'nothing' };
+  const check = async () => {
+    const facts = await pageFacts(this.page);
+    if (facts.path && typeof facts.path.currentPathIsAdmin === 'boolean') {
+      seen = { admin: facts.path.currentPathIsAdmin, by: `drupalSettings.path.currentPathIsAdmin is ${facts.path.currentPathIsAdmin}` };
+    } else if (await this.page.locator(marker).count()) {
+      seen = { admin: true, by: `the page matches "${marker}"` };
+    } else {
+      seen = { admin: facts.pathname.startsWith(`${base}/admin`), by: `the page carries no settings and its path is "${facts.pathname}"` };
+    }
+    return notCase ? !seen.admin : seen.admin;
+  };
+  if (await pollUntil(check, budget(this), this.page)) return;
+  throw friendly({
+    message: notCase ? 'Expected not to be on an administration page.' : 'Expected to be on an administration page.',
+    cause: seen.by,
+    hint: 'A route is an administration route when its definition sets "_admin_route"; a 403 or 404 page is not one.',
+  });
 });
 
 /**
@@ -442,9 +486,11 @@ Then(/^(I |we )*should( not)* see the (?:admin )?navigation sidebar$/, async fun
 });
 
 /**
- * Assert the breadcrumb block (`.breadcrumb`) is, or is not, visible. Core
- * renders no breadcrumb at all where the trail would be empty — the front page
- * being the usual case — which is what the negative form checks.
+ * Assert the breadcrumb is, or is not, visible: the navigation landmark core
+ * labels "Breadcrumb" (`nav[aria-labelledby="system-breadcrumb"]`), or the
+ * `.breadcrumb` class of core's themes; the "breadcrumb" named selector
+ * overrides both. Core renders no breadcrumb where the trail would be empty,
+ * the front page being the usual case, which is what the negative form checks.
  *
  * Example #1: Then I should see the breadcrumb
  * Example #2: And we should see the breadcrumbs
@@ -454,14 +500,15 @@ Then(/^(I |we )*should( not)* see the (?:admin )?navigation sidebar$/, async fun
  *
  */
 Then(/^(I |we )*should( not)* see the breadcrumbs?(?: trail)?$/, async function (pronounCase, notCase) {
-  await assertPresence(this.page.locator('.breadcrumb').first(), notCase, 'the breadcrumb block (".breadcrumb")');
+  const selector = namedSelector(this, 'breadcrumb', BREADCRUMB);
+  await assertPresence(this.page.locator(selector).first(), notCase, `the breadcrumb ("${selector}")`);
 });
 
 /**
- * Assert the local-tasks block — the tab strip core builds from a module's
- * `*.links.task.yml` — is, or is not, present. Matched by the
- * `primary-tabs-title` label core's template references plus the `.tabs`
- * classes, so it holds across base themes.
+ * Assert the local tasks, the tab strip core builds from a module's
+ * `*.links.task.yml`, are or are not present: the navigation core labels
+ * with `primary-tabs-title`, or the `.tabs` classes of core's themes; the
+ * "local tasks" named selector overrides both.
  *
  * Example #1: Then I should see the local tasks
  * Example #2: And we should see the tabs
@@ -471,19 +518,17 @@ Then(/^(I |we )*should( not)* see the breadcrumbs?(?: trail)?$/, async function 
  *
  */
 Then(/^(I |we )*should( not)* see the (?:primary )?(?:local tasks|tabs)$/, async function (pronounCase, notCase) {
-  await assertPresence(
-    this.page.locator('[aria-labelledby="primary-tabs-title"], .tabs--primary, nav.tabs').first(),
-    notCase,
-    'the local tasks block (".tabs")'
-  );
+  const selector = namedSelector(this, 'local tasks', '[aria-labelledby="primary-tabs-title"], .tabs--primary, nav.tabs');
+  await assertPresence(this.page.locator(selector).first(), notCase, `the local tasks ("${selector}")`);
 });
 
 /**
- * Assert the page-title block's heading (`h1.page-title`) contains, or does
- * not contain, a text. This is the *rendered* title core puts in the page
- * body, which is not always the `<title>` element webship-js's own title steps
- * read — admin pages in particular append the site name to one and not the
- * other.
+ * Assert the title of the page contains, or does not contain, a text: the
+ * heading of the main region (the "page title" named selector: an `<h1>`,
+ * `h1.page-title` on core's themes). This is the title core renders in the
+ * page body, which is not the `<title>` element webship-js's own title steps
+ * read. On a theme that prints no heading at all, the page's own part of the
+ * document title (the text before " | <site name>") is read instead.
  *
  * Example #1: Then I should see the page title "Log in"
  * Example #2: And we should see the page heading "Content"
@@ -493,9 +538,27 @@ Then(/^(I |we )*should( not)* see the (?:primary )?(?:local tasks|tabs)$/, async
  *
  */
 Then(/^(I |we )*should( not)* see the page (?:title|heading) "([^"]*)?"$/, async function (pronounCase, notCase, expectedTitle) {
-  const heading = this.page.locator('h1.page-title, h1.title, h1').first();
-  await assertPresence(heading, undefined, 'the page title ("h1.page-title")');
-  await assertContainsText(heading, expectedTitle, 'the page title', { negated: Boolean(notCase) });
+  const selector = namedSelector(this, 'page title', 'h1.page-title, h1');
+  const wanted = (expectedTitle || '').replace(/\s+/g, ' ').trim();
+  let seen = { headings: [], title: '' };
+  const check = async () => {
+    seen = await pageFacts(this.page, selector);
+    // The document title is "<page title> | <site name>"; its first part
+    // stands in for the heading only when the theme prints none.
+    const texts = seen.headings.length ? seen.headings : [seen.title.split(' | ')[0]];
+    const found = texts.some((text) => text.includes(wanted));
+    return notCase ? !found : found;
+  };
+  if (await pollUntil(check, notCase ? budget(this) : WAIT_TIMEOUT, this.page)) return;
+  throw friendly({
+    message: notCase
+      ? `Expected the page title not to contain "${wanted}".`
+      : `Expected the page title to contain "${wanted}".`,
+    cause: seen.headings.length
+      ? `the page title reads ${seen.headings.map((text) => `"${text}"`).join(' | ')}`
+      : `the page has no heading matching "${selector}" and its document title is "${seen.title}"`,
+    hint: 'Text is matched as a substring, whitespace-collapsed but case-sensitive. Set the "page title" named selector when the theme prints its title elsewhere.',
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -503,10 +566,16 @@ Then(/^(I |we )*should( not)* see the page (?:title|heading) "([^"]*)?"$/, async
 // ---------------------------------------------------------------------------
 
 /**
- * Assert a status message (`.messages--status`) is, or is not, visible, and —
- * when a text is given — that it contains that text. This is the markup core
- * renders for every successful save, so it doubles as the "did that action
- * actually take" assertion.
+ * Assert a status message is, or is not, visible and, when a text is given,
+ * that it contains that text. Core shows one after every successful save, so
+ * this doubles as the "did that action take" assertion.
+ *
+ * The message is found by what core states for it, whatever the theme: the
+ * `aria-label="Status message"` of core's message template or a
+ * `role="status"` element inside the `data-drupal-messages` region; then by
+ * the `.messages--status` class of core's themes. A project whose theme
+ * prints something else sets the "status message" named selector. With a
+ * text, a messages region that tells no kinds apart is searched as well.
  *
  * Example #1: Then I should see a status message
  * Example #2: And we should see a success message
@@ -516,18 +585,16 @@ Then(/^(I |we )*should( not)* see the page (?:title|heading) "([^"]*)?"$/, async
  *
  */
 Then(/^(I |we )*should( not)* see (?:a|the) (?:status|success|confirmation) message(?: "([^"]*)")?$/, async function (pronounCase, notCase, expectedText) {
-  // Core's template carries the class; a theme with its own template still
-  // carries the aria-label core sets on every message.
-  const message = this.page.locator('.messages--status, [aria-label="Status message"]').first();
-  await assertPresence(message, notCase, 'a status message (".messages--status" or aria-label "Status message")');
-  if (notCase) return;
-  await assertContainsText(message, expectedText, 'the status message');
+  await assertMessage(this, 'status', notCase, expectedText);
 });
 
 /**
- * Assert a warning message (`.messages--warning`) is, or is not, visible — the
- * middle severity core uses for "this worked, but you should know something",
- * such as the notices the status report and the module install screens raise.
+ * Assert a warning message is, or is not, visible and, when a text is given,
+ * that it contains that text: the severity core uses for "this worked, but
+ * you should know something", such as the notices of the status report and
+ * of the module pages. Found by `aria-label="Warning message"`, then the
+ * `.messages--warning` class of core's themes, or the "warning message"
+ * named selector.
  *
  * Example #1: Then I should see a warning message
  * Example #2: And we should see a warning
@@ -537,16 +604,16 @@ Then(/^(I |we )*should( not)* see (?:a|the) (?:status|success|confirmation) mess
  *
  */
 Then(/^(I |we )*should( not)* see (?:a|the) warning(?: message)?(?: "([^"]*)")?$/, async function (pronounCase, notCase, expectedText) {
-  const message = this.page.locator('.messages--warning, [aria-label="Warning message"]').first();
-  await assertPresence(message, notCase, 'a warning message (".messages--warning" or aria-label "Warning message")');
-  if (notCase) return;
-  await assertContainsText(message, expectedText, 'the warning message');
+  await assertMessage(this, 'warning', notCase, expectedText);
 });
 
 /**
- * Assert an error message (`.messages--error`) is, or is not, visible — the
- * markup core renders for failed validation, rejected credentials and access
- * notices alike — and, when a text is given, that it contains that text.
+ * Assert an error message is, or is not, visible and, when a text is given,
+ * that it contains that text. Core shows one for a failed validation, for
+ * rejected credentials and for access notices alike. Found by
+ * `aria-label="Error message"` or a `role="alert"` element inside the
+ * `data-drupal-messages` region, then the `.messages--error` class of core's
+ * themes, or the "error message" named selector.
  *
  * Example #1: Then I should see an error message
  * Example #2: And we should see a validation error
@@ -556,10 +623,7 @@ Then(/^(I |we )*should( not)* see (?:a|the) warning(?: message)?(?: "([^"]*)")?$
  *
  */
 Then(/^(I |we )*should( not)* see an? (?:validation |form |login |sign-?in |authentication )?error(?: message)?(?: "([^"]*)")?$/, async function (pronounCase, notCase, expectedText) {
-  const message = this.page.locator('.messages--error, [aria-label="Error message"]').first();
-  await assertPresence(message, notCase, 'an error message (".messages--error" or aria-label "Error message")');
-  if (notCase) return;
-  await assertContainsText(message, expectedText, 'the error message');
+  await assertMessage(this, 'error', notCase, expectedText);
 });
 
 // ---------------------------------------------------------------------------
@@ -567,9 +631,15 @@ Then(/^(I |we )*should( not)* see an? (?:validation |form |login |sign-?in |auth
 // ---------------------------------------------------------------------------
 
 /**
- * Assert the current page renders content of the given type — or does not —
- * via the `page-node-type-<type>` body class. The argument is the content
- * type's machine name, not its label.
+ * Assert the current page shows content of the given type, or does not. The
+ * argument is the content type's machine name, not its label.
+ *
+ * Core's themes print the type as the `page-node-type-<type>` body class and
+ * the `node--type-<type>` class (the "content type page" named selector, with
+ * `{type}` where the machine name goes). On a theme that prints neither, the
+ * site is asked: the item's edit form states its type in the
+ * `data-drupal-selector` Form API gives it, whatever the theme, for a session
+ * that may edit the item.
  *
  * Example #1: Then I should be on an "article" page
  * Example #2: And we should be on a "page" content page
@@ -579,12 +649,40 @@ Then(/^(I |we )*should( not)* see an? (?:validation |form |login |sign-?in |auth
  *
  */
 Then(/^(I |we )*should( not)* be on an? "([^"]*)?"(?: content)? page$/, async function (pronounCase, notCase, contentType) {
-  await assertPresence(
-    this.page.locator(`body.page-node-type-${contentType}`),
-    notCase,
-    `the content-type body class ("body.page-node-type-${contentType}")`,
-    { attached: true }
-  );
+  const type = String(contentType || '').trim();
+  const hyphenated = type.replace(/_/g, '-');
+  const template = namedSelector(this, 'content type page', 'body.page-node-type-{type}, .node--type-{type}');
+  const selector = [...new Set([template.replace(/\{type\}/g, hyphenated), template.replace(/\{type\}/g, type)])].join(', ');
+  let seen = { is: false, by: 'nothing' };
+  const check = async () => {
+    if (await this.page.locator(selector).count()) {
+      seen = { is: true, by: `the page matches "${selector}"` };
+    } else if (await this.page.locator('body[class*="page-node-type-"], [class*="node--type-"]').count()) {
+      const facts = await pageFacts(this.page);
+      seen = { is: false, by: `nothing matches "${selector}" (body classes: ${facts.bodyClasses.join(' ') || 'none'})` };
+    } else {
+      // The theme prints no type at all: ask the site.
+      const nid = await currentNodeId(this.page);
+      const response = nid
+        ? await this.page.request.get(joinUrl(this.launchUrl, `/node/${nid}/edit`), { failOnStatusCode: false }).catch(() => null)
+        : null;
+      const form = response && response.status() === 200
+        ? ((await response.text()).match(/data-drupal-selector="node-([a-z0-9-]+)-edit-form"/) || [])[1]
+        : null;
+      seen = form
+        ? { is: form === hyphenated, by: `the theme prints no content type; the edit form of node ${nid} is the "${form}" form` }
+        : { is: false, by: `the theme prints no content type and ${nid ? `the session may not open /node/${nid}/edit` : 'the page is not a content item'}` };
+    }
+    return notCase ? !seen.is : seen.is;
+  };
+  if (await pollUntil(check, budget(this), this.page)) return;
+  throw friendly({
+    message: notCase
+      ? `Expected the page not to show "${type}" content.`
+      : `Expected the page to show "${type}" content.`,
+    cause: seen.by,
+    hint: 'Pass the machine name of the content type. For a theme that prints the type in its own way, set the "content type page" named selector, with {type} for the machine name.',
+  });
 });
 
 /**
@@ -620,12 +718,13 @@ When(/^(I |we )*create an? "([^"]*)?" (?:content item|node) (?:titled|with title
 });
 
 /**
- * Assert a Views listing reported no results — the `views-empty` region core's
- * `views-view` template renders in place of rows — or that it did return some.
- * Every core admin listing (content, people, files, the watchdog log) is a
- * View, so this is how you assert on an empty one without matching its
- * site-specific "no results" wording. Both spellings of the class are matched:
- * core's own templates use `views-empty`, several base themes `view-empty`.
+ * Assert a Views listing reported no results (the empty region core's
+ * `views-view` template renders in place of rows), or that it did return
+ * some. Every core administration listing (content, people, files, the log)
+ * is a View, so this is how an empty one is asserted without matching its
+ * site-specific "no results" wording. Core's templates use the class
+ * `views-empty`, several base themes `view-empty`; the "empty view" named
+ * selector overrides both.
  *
  * Example #1: Then I should see an empty listing
  * Example #2: And we should see an empty view
@@ -636,10 +735,11 @@ When(/^(I |we )*create an? "([^"]*)?" (?:content item|node) (?:titled|with title
  */
 Then(/^(I |we )*should see (an empty|a non-?empty) (?:view|listing)$/, async function (pronounCase, polarity) {
   const negated = polarity.startsWith('a non');
+  const selector = namedSelector(this, 'empty view', '.views-empty, .view-empty');
   await assertPresence(
-    this.page.locator('.views-empty, .view-empty').first(),
+    this.page.locator(selector).first(),
     negated ? ' not' : undefined,
-    'an empty-view region (".views-empty")'
+    `the empty region of a listing ("${selector}")`
   );
 });
 
@@ -1109,7 +1209,8 @@ When(/^(I |we )*open the "([^"]*)" (?:link|operation) in the "([^"]*)" row$/, as
 // ---------------------------------------------------------------------------
 
 /**
- * Assert the breadcrumb block (`.breadcrumb`) contains, or does not contain,
+ * Assert the breadcrumb (the "breadcrumb" named selector: the navigation
+ * core labels "Breadcrumb", or `.breadcrumb`) contains, or does not contain,
  * a text. Reads the whole trail, so a parent several levels up still matches.
  * Fails distinctly when the page has no breadcrumb at all.
  *
@@ -1123,8 +1224,9 @@ When(/^(I |we )*open the "([^"]*)" (?:link|operation) in the "([^"]*)" row$/, as
 Then(/^(?:"([^"]*)" should( not)* be in the breadcrumbs?|(?:the )?breadcrumbs? should( not)* contain "([^"]*)")$/, async function (textA, notA, notB, textB) {
   const text = supplied(textA) ? textA : textB;
   const notCase = supplied(textA) ? notA : notB;
-  const breadcrumb = this.page.locator('.breadcrumb, nav.breadcrumb, [aria-label="Breadcrumb"]').first();
-  await assertPresence(breadcrumb, undefined, 'the breadcrumb block (".breadcrumb")', { attached: true });
+  const selector = namedSelector(this, 'breadcrumb', BREADCRUMB);
+  const breadcrumb = this.page.locator(selector).first();
+  await assertPresence(breadcrumb, undefined, `the breadcrumb ("${selector}")`, { attached: true });
   await assertContainsText(breadcrumb, text, 'the breadcrumb trail', { negated: Boolean(notCase) });
 });
 
@@ -1391,10 +1493,14 @@ Given(/^(I am |we are )*(?:adding|creating) an? "([^"]*)"(?: content item| node)
 });
 
 /**
- * Assert the content item being viewed is published or unpublished, via the
- * `node--unpublished` class core's node template adds to an unpublished
- * node. Under an editorial workflow a new item usually starts as an
- * unpublished draft, which is what the "unpublished" form checks.
+ * Assert the content item being viewed is published or unpublished.
+ *
+ * Core's themes mark an unpublished item with the `node--unpublished` class
+ * (the "unpublished content" named selector). On a theme that prints no node
+ * classes at all, the site is asked instead: the item is requested as a
+ * visitor with no session, and a refusal (403 or 404) means it is not
+ * published. That answer assumes visitors may view published content, which
+ * is core's default.
  *
  * Example #1: Then the content item should be published
  * Example #2: And the content item should be unpublished
@@ -1405,12 +1511,35 @@ Given(/^(I am |we are )*(?:adding|creating) an? "([^"]*)"(?: content item| node)
  */
 Then(/^(?:the )?content(?: item)? should( not)* be (published|unpublished)$/, async function (notCase, state) {
   const expectUnpublished = (state === 'unpublished') !== Boolean(notCase);
-  await assertPresence(
-    this.page.locator('.node--unpublished, article.unpublished').first(),
-    expectUnpublished ? undefined : ' not',
-    'the "node--unpublished" marker core adds to an unpublished content item',
-    { attached: true }
-  );
+  const marker = namedSelector(this, 'unpublished content', '.node--unpublished, article.unpublished');
+  let seen = { unpublished: false, by: 'nothing' };
+  const check = async () => {
+    if (await this.page.locator(marker).count()) {
+      seen = { unpublished: true, by: `the page matches "${marker}"` };
+    } else if (await this.page.locator('[class*="node--"], article.node').count()) {
+      seen = { unpublished: false, by: `the theme prints the node classes and nothing matches "${marker}"` };
+    } else {
+      const nid = await currentNodeId(this.page);
+      if (!nid) {
+        throw friendly({
+          message: 'Could not determine which content item is being viewed.',
+          hint: 'Open a content item\'s page (a /node/<nid> URL or its alias) first.',
+        });
+      }
+      const status = await visitorStatus(joinUrl(this.launchUrl, `/node/${nid}`));
+      seen = {
+        unpublished: status === 403 || status === 404,
+        by: `the theme prints no node classes; a visitor with no session gets ${status} for /node/${nid}`,
+      };
+    }
+    return seen.unpublished === expectUnpublished;
+  };
+  if (await pollUntil(check, budget(this), this.page)) return;
+  throw friendly({
+    message: `Expected the content item to be ${expectUnpublished ? 'unpublished' : 'published'}.`,
+    cause: seen.by,
+    hint: 'Set the "unpublished content" named selector when the theme marks an unpublished item in its own way.',
+  });
 });
 
 /**
