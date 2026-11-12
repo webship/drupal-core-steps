@@ -1,7 +1,7 @@
 Feature: Users registry login
   As a test author
-  I want to log in by a user handle configured once in cucumber.js
-  So that feature files never carry credentials and the login survives overlays
+  I want to log in by the handle of an account the site's build created and cucumber.js names
+  So that feature files carry no credentials and create no accounts
 
   @critical
   Scenario: The administrator handle logs in through the robust in-page submit
@@ -41,3 +41,14 @@ Feature: Users registry login
     When I am on "/admin/content"
     Then the page should return HTTP status 403
     And I should be on the access denied page
+
+  Scenario: Every account of the registry logs in by its handle
+    Given I am a logged in user with the "editor" user
+    Then I should be logged in
+    Given I am a logged in user with the "authenticated" user
+    Then I should be logged in
+    And I should not see the navigation sidebar
+    Given I am a logged in user with the "reviewer" user
+    Then I should be logged in
+    And I am on the my account page
+    And I should see the page title "reviewer_with_a_long_name"

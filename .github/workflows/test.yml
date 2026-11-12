@@ -10,7 +10,8 @@ on:
 env:
   FORCE_COLOR: '1'
   LAUNCH_URL: http://drupal-core-steps-site.ddev.site
-  # Accounts the users registry in cucumber.js logs in as (see README).
+  # The accounts of the site, which the build below creates with drush and the
+  # users registry in cucumber.js names. The features only log in.
   DRUPAL_ADMIN_USER: admin
   DRUPAL_ADMIN_PASS: admin
   DRUPAL_EDITOR_USER: editor
@@ -53,6 +54,17 @@ jobs:
             --account-name=admin --account-pass=admin \
             --yes
 
+      # Accounts are configuration: the build creates every account the users
+      # registry names, and no feature of the default run creates or removes one.
+      - name: Create the accounts of the users registry
+        working-directory: drupal
+        run: |
+          ddev drush user:create "$DRUPAL_EDITOR_USER" --mail="editor@example.com" --password="$DRUPAL_EDITOR_PASS"
+          ddev drush user:role:add content_editor "$DRUPAL_EDITOR_USER"
+          ddev drush user:create "$DRUPAL_AUTHENTICATED_USER" --mail="authenticated@example.com" --password="$DRUPAL_AUTHENTICATED_PASS"
+          ddev drush user:create "$DRUPAL_REVIEWER_USER" --mail="reviewer@example.com" --password="$DRUPAL_REVIEWER_PASS"
+          ddev drush user:role:add content_editor "$DRUPAL_REVIEWER_USER"
+
       # The self-test suite needs a little more than a bare Standard install
       # (see "Run this repo's tests" in the README): two core recipes, a second
       # account for the users registry, and one article plus one media item.
@@ -63,9 +75,6 @@ jobs:
           ddev drush recipe core/recipes/page_content_type
           ddev drush recipe core/recipes/image_media_type
           ddev drush pm:install layout_builder --yes
-          ddev drush user:create "$DRUPAL_EDITOR_USER" --mail="editor@example.com" --password="$DRUPAL_EDITOR_PASS"
-          ddev drush user:role:add content_editor "$DRUPAL_EDITOR_USER"
-          ddev drush user:create "$DRUPAL_AUTHENTICATED_USER" --mail="authenticated@example.com" --password="$DRUPAL_AUTHENTICATED_PASS"
           mkdir -p seed && cp ../tests/seed/standard-fixtures.php seed/
           ddev drush php:script seed/standard-fixtures.php
           ddev drush cache:rebuild
@@ -96,6 +105,11 @@ jobs:
         run: |
           (cd drupal && ddev drush theme:enable stark --yes && ddev drush config:set system.theme default stark --yes && ddev drush cache:rebuild)
           WEBSHIP_REPORT_DISABLE=1 npx cucumber-js --config cucumber.js --tags '@any-theme' --format summary
+
+      # Optional steps, proven on their own: the one feature that creates and
+      # removes accounts through the People administration, with its own registry.
+      - name: Run the optional provisioning feature
+        run: WEBSHIP_REPORT_DISABLE=1 npm run test:provisioning
 
       - name: Show DDEV logs
         if: always()

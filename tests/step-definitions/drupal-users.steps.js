@@ -1,9 +1,19 @@
 'use strict';
 
-// Steps for the accounts of the users registry (`worldParameters.users` in
-// cucumber.js): creating and removing the testing users through core's own
-// People administration (`/admin/people/create`, `/user/<uid>/cancel`), so a
-// suite can provision what it logs in as on any site it is pointed at.
+// OPTIONAL: provisioning the accounts of the users registry.
+//
+// Accounts are configuration. The recommended setup is that the build of the
+// site creates them (`drush user:create`, a recipe, the installer), that
+// `worldParameters.users` in cucumber.js names them, and that features only
+// log in: no scenario creates or removes a user. Nothing in this file is
+// needed for that.
+//
+// The two steps here are for a project that cannot prepare its site that way
+// and wants the suite to do it: "I add the testing users" and "I delete the
+// testing users" create and remove the accounts of the registry through
+// core's own People administration (`/admin/people/create`,
+// `/user/<uid>/cancel`). Keep them in one feature of their own, tagged so it
+// can be left out of a run (this repository tags it `@provisioning`).
 //
 // A registry entry carries `username`, `password`, optionally `email` and the
 // role machine names to grant (`roles: ['content_editor']`); the entry marked
@@ -19,6 +29,7 @@ const {
   navigate,
   waitForState,
   resolveUser,
+  messageSelector,
   submitInPage,
   loginWithForm,
   robustClick,
@@ -166,7 +177,8 @@ async function findUid(world, username) {
 }
 
 /**
- * Create every provisionable account of the users registry that does not
+ * Optional (see the top of this file: accounts are better created by the
+ * site's build). Create every account of the users registry that does not
  * exist yet, through `/admin/people/create`, granting the roles each entry
  * lists. Accounts that already exist are left alone, so the step is safe to
  * run at the start of every suite. Logs in as the administrator handle when
@@ -224,7 +236,7 @@ Given(/^(I |we )*add (?:the )?testing users$/, async function (pronounCase) {
     const form = this.page.locator('#user-register-form, form.user-register-form').first();
     if ((await form.isVisible().catch(() => false)) && !(await findUid(this, user.username))) {
       const texts = [];
-      for (const item of await this.page.locator('.form-item--error-message, .messages--error, [aria-label="Error message"]').all()) {
+      for (const item of await this.page.locator(`.form-item--error-message, ${messageSelector(this, 'error')}`).all()) {
         const text = ((await item.textContent()) || '').replace(/\s+/g, ' ').trim();
         if (text && !texts.includes(text)) texts.push(text);
       }
@@ -240,8 +252,8 @@ Given(/^(I |we )*add (?:the )?testing users$/, async function (pronounCase) {
 });
 
 /**
- * Remove every provisionable account of the users registry that exists,
- * through its cancel form (`/user/<uid>/cancel`), deleting the account and
+ * Optional (see the top of this file). Remove every account of the users
+ * registry that exists, through its cancel form (`/user/<uid>/cancel`), deleting the account and
  * its content. The administrator account is never removed. Logs in as the
  * administrator handle when the session may not administer users.
  *
