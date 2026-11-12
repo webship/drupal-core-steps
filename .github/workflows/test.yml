@@ -10,8 +10,8 @@ on:
 env:
   FORCE_COLOR: '1'
   LAUNCH_URL: http://drupal-core-steps-site.ddev.site
-  # The accounts of the site, which the build below creates with drush and the
-  # users registry in cucumber.js names. The features only log in.
+  # The accounts of the site, which the build creates with drush and the users
+  # registry in cucumber.js names. The features only log in.
   DRUPAL_ADMIN_USER: admin
   DRUPAL_ADMIN_PASS: admin
   DRUPAL_EDITOR_USER: editor
@@ -23,7 +23,16 @@ env:
 
 jobs:
   cucumber:
+    name: Drupal ${{ matrix.drupal }}
     runs-on: ubuntu-latest
+    env:
+      # cucumber.js leaves out the scenarios of the other major version.
+      DRUPAL_MAJOR: ${{ matrix.drupal }}
+    strategy:
+      # Each Drupal version reports on its own.
+      fail-fast: false
+      matrix:
+        drupal: ['11', '12']
 
     steps:
       - uses: actions/checkout@v4
@@ -39,69 +48,33 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      - name: Install and start DDEV
+      - name: Install DDEV
         uses: ddev/github-action-setup-ddev@v1
         with:
-          ddevDir: drupal
+          autostart: false
 
-      - name: Build a default Drupal core site (Standard profile)
-        working-directory: drupal
-        run: |
-          ddev composer create-project drupal/recommended-project
-          ddev composer require drush/drush --no-interaction
-          ddev drush site-install standard \
-            --site-name="Drupal Core Steps" \
-            --account-name=admin --account-pass=admin \
-            --yes
-
-      # Accounts are configuration: the build creates every account the users
-      # registry names, and no feature of the default run creates or removes one.
-      - name: Create the accounts of the users registry
-        working-directory: drupal
-        run: |
-          ddev drush user:create "$DRUPAL_EDITOR_USER" --mail="editor@example.com" --password="$DRUPAL_EDITOR_PASS"
-          ddev drush user:role:add content_editor "$DRUPAL_EDITOR_USER"
-          ddev drush user:create "$DRUPAL_AUTHENTICATED_USER" --mail="authenticated@example.com" --password="$DRUPAL_AUTHENTICATED_PASS"
-          ddev drush user:create "$DRUPAL_REVIEWER_USER" --mail="reviewer@example.com" --password="$DRUPAL_REVIEWER_PASS"
-          ddev drush user:role:add content_editor "$DRUPAL_REVIEWER_USER"
-
-      # The self-test suite needs a little more than a bare Standard install
-      # (see "Run this repo's tests" in the README): two core recipes, a second
-      # account for the users registry, and one article plus one media item.
-      - name: Seed the fixtures the self-test suite relies on
-        working-directory: drupal
-        run: |
-          ddev drush recipe core/recipes/article_content_type
-          ddev drush recipe core/recipes/page_content_type
-          ddev drush recipe core/recipes/image_media_type
-          ddev drush pm:install layout_builder --yes
-          # The Search module with the node search page, open to everyone.
-          ddev drush pm:install search search_node --yes
-          ddev drush role:perm:add anonymous 'search content'
-          ddev drush role:perm:add authenticated 'search content'
-          mkdir -p seed && cp ../tests/seed/standard-fixtures.php seed/
-          ddev drush php:script seed/standard-fixtures.php
-          ddev drush cache:rebuild
-          # Index the content for the search feature.
-          ddev drush cron
+      # A Standard profile installation, the accounts of the users registry and
+      # the fixtures of the suite: see tests/seed/build-site.sh.
+      - name: Build the Drupal ${{ matrix.drupal }} site
+        run: tests/seed/build-site.sh ${{ matrix.drupal }}
 
       - name: Wait for the site to answer over its DDEV URL
         run: |
           for i in $(seq 1 30); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' "$LAUNCH_URL/" || true)
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$LAUNCH_URL/user/login" || true)
             [ "$code" = "200" ] && exit 0
             sleep 2
           done
-          echo "Site never settled to a clean 200 response" >&2
+          echo "The site never answered 200 for /user/login" >&2
           exit 1
 
-      - name: Check the step examples and feature steps against the definitions
+      - name: Check the step examples and the feature steps against the definitions
         run: npm run test:examples
 
-      - name: Run cucumber dry-run (no ambiguous/undefined steps)
+      - name: Dry run (no undefined and no ambiguous step)
         run: npm run test:dry
 
-      - name: Run Drupal core step tests
+      - name: Run the suite
         run: npm test
 
       # The steps must not depend on the classes of core's themes: the scenarios
@@ -110,7 +83,7 @@ jobs:
       - name: Run the theme-independent scenarios under Stark
         run: |
           (cd drupal && ddev drush theme:enable stark --yes && ddev drush config:set system.theme default stark --yes && ddev drush cache:rebuild)
-          WEBSHIP_REPORT_DISABLE=1 npx cucumber-js --config cucumber.js --tags '@any-theme' --format summary
+          WEBSHIP_REPORT_DISABLE=1 npx cucumber-js --config cucumber.js --tags '@any-theme' --format summary --format json:tests/reports/cucumber_report_any_theme.json
 
       # Optional steps, proven on their own: the one feature that creates and
       # removes accounts through the People administration, with its own registry.
@@ -122,12 +95,12 @@ jobs:
         working-directory: drupal
         run: ddev logs || true
 
-      - name: Upload test report
+      - name: Upload the test report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: cucumber-report
+          name: cucumber-report-drupal-${{ matrix.drupal }}
           path: |
-            tests/reports/cucumber_report.json
+            tests/reports/*.json
             screenshots/
           retention-days: 14

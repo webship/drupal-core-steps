@@ -3,6 +3,8 @@ Feature: Core JavaScript delivery
   I want core's settings payload to reach the browser and initialize
   So that a broken asset pipeline fails a test instead of a visitor's page
 
+  @drupal11
+
   Scenario: The front page initializes the core JavaScript settings
     Given I am an anonymous user
     And I am on the homepage

@@ -16,6 +16,8 @@ Feature: Page caching
     Then I should be logged in
     And the page should not be served from the page cache
 
+  @drupal11
+
   Scenario: A repeat authenticated view is served from the dynamic page cache
     Given I am a logged in user with the "admin" user
     And I go to the homepage

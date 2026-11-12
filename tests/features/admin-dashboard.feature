@@ -18,6 +18,8 @@ Feature: Administration dashboard
     Then I should be on an admin page
     And I should see the page title "Administration"
 
+  @drupal11
+
   Scenario: The front page is not an administration page
     When I go to the homepage
     Then I should be on the front page

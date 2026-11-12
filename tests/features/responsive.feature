@@ -3,6 +3,8 @@ Feature: Responsive rendering
   I want core's pages to keep rendering across viewport widths
   So that a layout regression at one breakpoint is caught
 
+  @drupal11
+
   Scenario Outline: The front page renders at every breakpoint
     Given I am an anonymous user
     And I am on the homepage

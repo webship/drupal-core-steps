@@ -9,6 +9,8 @@ Feature: Feeds and crawler files
     Then the response status code should be 200
     And the response header "content-type" should contain the value "text/plain"
 
+  @drupal11
+
   Scenario: The front page feed is served as RSS
     Given I am an anonymous user
     And I am on "/rss.xml"
