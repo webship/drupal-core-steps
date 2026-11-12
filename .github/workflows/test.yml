@@ -89,6 +89,14 @@ jobs:
       - name: Run Drupal core step tests
         run: npm test
 
+      # The steps must not depend on the classes of core's themes: the scenarios
+      # tagged @any-theme run again with Stark as the default theme, which
+      # prints only what core's modules state.
+      - name: Run the theme-independent scenarios under Stark
+        run: |
+          (cd drupal && ddev drush theme:enable stark --yes && ddev drush config:set system.theme default stark --yes && ddev drush cache:rebuild)
+          WEBSHIP_REPORT_DISABLE=1 npx cucumber-js --config cucumber.js --tags '@any-theme' --format summary
+
       - name: Show DDEV logs
         if: always()
         working-directory: drupal
