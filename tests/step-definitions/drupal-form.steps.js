@@ -1,8 +1,9 @@
 'use strict';
 
 // Steps for the pieces of core's forms and admin UI that a scenario has to
-// operate rather than merely see: collapsible details, vertical tabs, the
-// AJAX throbber, confirmation forms, CKEditor 5's link balloon and the
+// operate rather than merely see: the sections of a form (vertical tabs or
+// collapsible details, whichever the theme renders), the AJAX throbber,
+// confirmation forms, CKEditor 5's link balloon and the
 // autocomplete suggestions of entity reference fields, plus the content a
 // scenario creates and comes back to (view, edit, delete the item it made),
 // taxonomy terms and menu links.
@@ -18,6 +19,7 @@ const {
   navigate,
   waitForState,
   assertPresence,
+  messageSelector,
   submitInPage,
   robustClick,
   resolveFieldId,
@@ -35,14 +37,123 @@ function escapeRe(s) {
 }
 
 // ---------------------------------------------------------------------------
-// Details, vertical tabs, AJAX
+// Form sections (vertical tabs and details), AJAX
 // ---------------------------------------------------------------------------
+
+/**
+ * Open or close a section of a form by its title, however the theme renders
+ * it. Core builds the side settings of a form ("Menu settings", "URL alias",
+ * "Promotion options") as `details` elements; a theme then shows them as a
+ * list of vertical tabs, as an accordion or as plain collapsible details
+ * (the node form of Drupal 12 does the last). The section is looked up as a
+ * vertical tab first, then as a details element by its id, its
+ * `data-drupal-selector` or the text of its summary.
+ *
+ * @param {object} world - The cucumber World.
+ * @param {string} label - The section title, or the id of its details element.
+ * @param {boolean} wantOpen
+ * @returns {Promise<{found: boolean, kind: string, titles: string[]}>}
+ */
+async function toggleFormSection(world, label, wantOpen) {
+  await world.page.locator('details, .vertical-tabs__menu-item').first()
+    .waitFor({ state: 'attached', timeout: budget(world) }).catch(() => {});
+  return world.page.evaluate(({ label, wantOpen }) => {
+    const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+    const same = (a, b) => norm(a).toLowerCase() === norm(b).toLowerCase();
+    const visible = (el) => Boolean(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+    // The title of a vertical tab or of a summary, without the value summary
+    // core appends to it ("Menu settings Not in menu", "URL alias (No alias)").
+    const titleOf = (el) => {
+      const own = el.querySelector('.vertical-tabs__menu-item-title, .vertical-tabs__menu-link-content > strong, strong');
+      if (own && el.matches('.vertical-tabs__menu-item, .vertical-tabs__menu-item a, .vertical-tabs__menu-link')) return norm(own.textContent);
+      const clone = el.cloneNode(true);
+      clone.querySelectorAll('.summary, .vertical-tabs__menu-item-summary, .vertical-tabs__menu-link-summary, .visually-hidden, .required-mark').forEach((n) => n.remove());
+      return norm(clone.textContent).replace(/\s*\(.*\)\s*$/, '');
+    };
+    const titles = [];
+
+    // 1. A vertical tab: the tab link is what a person clicks.
+    const tabs = [...document.querySelectorAll('.vertical-tabs__menu-item a, .vertical-tabs__menu-link')].filter(visible);
+    for (const tab of tabs) titles.push(titleOf(tab));
+    const tab = tabs.find((el) => same(titleOf(el), label))
+      || tabs.find((el) => (el.getAttribute('href') || '') === `#${label}`)
+      || tabs.find((el) => norm(el.textContent).toLowerCase().startsWith(label.toLowerCase()));
+    if (tab) {
+      if (wantOpen) tab.click();
+      return { found: true, kind: 'vertical tab', titles };
+    }
+
+    // 2. A details element, plain or in an accordion.
+    const all = [...document.querySelectorAll('details')];
+    const summaryOf = (d) => d.querySelector(':scope > summary') || d.querySelector('summary');
+    for (const d of all) {
+      const summary = summaryOf(d);
+      if (summary && visible(summary)) titles.push(titleOf(summary));
+    }
+    let details = all.find((d) => d.id === label || d.getAttribute('data-drupal-selector') === label);
+    if (!details) details = all.find((d) => summaryOf(d) && same(titleOf(summaryOf(d)), label));
+    if (!details) details = all.find((d) => summaryOf(d) && norm(summaryOf(d).textContent).toLowerCase().startsWith(label.toLowerCase()));
+    if (!details) details = all.find((d) => summaryOf(d) && norm(summaryOf(d).textContent).toLowerCase().includes(label.toLowerCase()));
+    if (!details) return { found: false, kind: '', titles: [...new Set(titles.filter(Boolean))] };
+    if (details.open !== wantOpen) {
+      // The summary click is what core's own scripts listen to; the
+      // attribute is set as well when the click did not take.
+      const summary = summaryOf(details);
+      if (summary) summary.click();
+      if (details.open !== wantOpen) details.open = wantOpen;
+    }
+    if (wantOpen) details.scrollIntoView({ block: 'center' });
+    return { found: true, kind: 'details', titles };
+  }, { label, wantOpen });
+}
+
+/**
+ * Run `toggleFormSection` and fail with the sections the form does have when
+ * the one asked for is not among them.
+ *
+ * @param {object} world - The cucumber World.
+ * @param {string} label
+ * @param {boolean} wantOpen
+ * @returns {Promise<void>}
+ */
+async function operateFormSection(world, label, wantOpen) {
+  const state = await toggleFormSection(world, label, wantOpen);
+  if (!state.found) {
+    throw friendly({
+      message: `No "${label}" section was found in the form.`,
+      cause: state.titles.length ? `the form has: ${state.titles.join(', ')}` : 'the page has no vertical tab and no details element',
+      hint: 'Pass the title as the form shows it (without the value printed next to it), or the id of the details element.',
+    });
+  }
+  await waitForPageLoad(world.page, budget(world));
+}
+
+/**
+ * Open or close a section of a form ("Menu settings", "Promotion options",
+ * "URL alias", "Revision information") by its title, whether the theme shows
+ * the sections as vertical tabs, as an accordion or as plain collapsible
+ * details. A field inside a closed section is not visible to a fill, so open
+ * its section first. This is the phrasing to prefer: a scenario written with
+ * it runs unchanged on Drupal 11 and Drupal 12 and under any administration
+ * theme.
+ *
+ * Example #1: When I open the "Menu settings" form section
+ * Example #2: And I open the "URL alias" section of the form
+ * Example #3: When we open the "Promotion options" form section
+ * Example #4: And I close the "Menu settings" form section
+ * Example #5: When I open the "Publishing options" section of the form
+ *
+ */
+When(/^(I |we )*(open|close|expand|collapse) the "([^"]*)" (?:form section|section of the form)$/, async function (pronounCase, action, label) {
+  await operateFormSection(this, label, action === 'open' || action === 'expand');
+});
 
 /**
  * Open or close a collapsible details element of a form ("Menu settings",
  * "Promotion options", "URL alias", "Revision information"), by the text of
- * its summary or by its id. The node form keeps most of its side settings in
- * such elements, and a field inside a closed one is not visible to a fill.
+ * its summary or by its id. When the theme shows that section as a vertical
+ * tab instead, the tab is opened: the step does what the sentence means on
+ * either rendering.
  *
  * Example #1: When I expand the "Menu settings" details
  * Example #2: And I expand the "URL alias" details
@@ -52,50 +163,15 @@ function escapeRe(s) {
  *
  */
 When(/^(I |we )*(expand|collapse|open|close) the "([^"]*)" details$/, async function (pronounCase, action, label) {
-  const wantOpen = action === 'expand' || action === 'open';
-  await this.page.locator('details').first().waitFor({ state: 'attached', timeout: budget(this) }).catch(() => {});
-  const state = await this.page.evaluate(({ label, wantOpen }) => {
-    const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
-    const all = [...document.querySelectorAll('details')];
-    let details = all.find((d) => d.id === label || d.getAttribute('data-drupal-selector') === label);
-    if (!details) {
-      details = all.find((d) => {
-        const summary = d.querySelector('summary');
-        return summary && norm(summary.textContent).replace(/\s*\(.*\)\s*$/, '').toLowerCase() === label.toLowerCase();
-      });
-    }
-    if (!details) {
-      details = all.find((d) => {
-        const summary = d.querySelector('summary');
-        return summary && norm(summary.textContent).toLowerCase().includes(label.toLowerCase());
-      });
-    }
-    if (!details) return { found: false, summaries: all.map((d) => norm((d.querySelector('summary') || {}).textContent)).filter(Boolean) };
-    const changed = details.open !== wantOpen;
-    if (changed) {
-      // The summary click is what core's own JS listens to (vertical tabs,
-      // details polyfill); the attribute is set as well for good measure.
-      const summary = details.querySelector('summary');
-      if (summary) summary.click();
-      if (details.open !== wantOpen) details.open = wantOpen;
-      details.scrollIntoView({ block: 'center' });
-    }
-    return { found: true, changed };
-  }, { label, wantOpen });
-  if (!state.found) {
-    throw friendly({
-      message: `No "${label}" details element was found on the page.`,
-      cause: state.summaries.length ? `the page has: ${state.summaries.join(', ')}` : 'the page has no details element',
-      hint: 'Pass the summary text as the form shows it, or the element id.',
-    });
-  }
-  await waitForPageLoad(this.page, budget(this));
+  await operateFormSection(this, label, action === 'expand' || action === 'open');
 });
 
 /**
- * Switch to a vertical tab of a form by its title ("Promotion options",
- * "Authoring information", "Menu settings" on the node form of a theme that
- * renders them as tabs), so the fields behind it become visible.
+ * Switch to a vertical tab of a form by its title ("Publishing options",
+ * "Display settings", "Menu settings" on the content type form). When the
+ * theme shows that section as collapsible details instead, as the node form
+ * of Drupal 12 does, the details element is opened: the step does what the
+ * sentence means on either rendering.
  *
  * Example #1: When I open the "Promotion options" vertical tab
  * Example #2: And I open the "Authoring information" vertical tab
@@ -105,20 +181,7 @@ When(/^(I |we )*(expand|collapse|open|close) the "([^"]*)" details$/, async func
  *
  */
 When(/^(I |we )*open the "([^"]*)" vertical tab$/, async function (pronounCase, title) {
-  const tab = this.page.locator('.vertical-tabs__menu-item a, .vertical-tabs__menu-item')
-    .filter({ hasText: new RegExp(`^\\s*${escapeRe(title)}`, 'i') })
-    .first();
-  try {
-    await tab.waitFor({ state: 'visible', timeout: budget(this) });
-  } catch (error) {
-    throw friendly({
-      message: `No "${title}" vertical tab was found.`,
-      cause: error,
-      hint: 'Vertical tabs are details elements the form renders as a tab list; use "I expand the \\"...\\" details" when the theme renders them as plain details.',
-    });
-  }
-  await robustClick(tab);
-  await waitForPageLoad(this.page, budget(this));
+  await operateFormSection(this, title, true);
 });
 
 /**
@@ -176,7 +239,8 @@ When(/^(I |we )*(?:confirm the (?:deletion|form|action)|submit the confirmation 
 
 /**
  * Type a URL into the link balloon CKEditor 5 opens after the "Link" toolbar
- * button, character by character so an autocomplete (core's or Linkit's)
+ * button, character by character so an autocomplete (core's, or the one a
+ * link module adds)
  * fires; follow with "I click on the save button in ..." to apply it, or
  * with "I choose the ... autocomplete suggestion".
  *
@@ -216,8 +280,8 @@ When(/^(I |we )*fill in the link URL "([^"]*)"$/, async function (pronounCase, u
 
 /**
  * Pick an entry of the autocomplete list that core shows under an entity
- * reference field (a "Tags" field, a link field, the CKEditor link balloon
- * with Linkit) by its text, after the field was typed into.
+ * reference field (a "Tags" field, a link field, the link balloon of the
+ * rich text editor) by its text, after the field was typed into.
  *
  * Example #1: When I choose the "Sample article" autocomplete suggestion
  * Example #2: And I choose the "Drupal" autocomplete suggestion
@@ -418,7 +482,7 @@ When(/^(I |we )*create an? "([^"]*)" (?:taxonomy )?term named "([^"]*)"$/, async
   await waitForState(field, 'visible', `Expected the term add form of the "${vocabulary}" vocabulary`);
   await field.fill(name);
   await submitInPage(this, 'form.taxonomy-term-form #edit-submit, #edit-submit', 'form.taxonomy-term-form');
-  const error = this.page.locator('.messages--error, [aria-label="Error message"]').first();
+  const error = this.page.locator(messageSelector(this, 'error')).first();
   if (await error.isVisible({ timeout: 1000 }).catch(() => false)) {
     throw friendly({
       message: `Creating the "${name}" term failed.`,
@@ -446,7 +510,7 @@ When(/^(I |we )*add a menu link titled "([^"]*)" to "([^"]*)" in the "([^"]*)" m
   await titleField.fill(title);
   await this.page.locator('#edit-link-0-uri').first().fill(target);
   await submitInPage(this, 'form.menu-link-content-form #edit-submit, form.menu-link-content-menu-link-content-form #edit-submit, #edit-submit', 'form.menu-link-content-form');
-  const error = this.page.locator('.messages--error, [aria-label="Error message"]').first();
+  const error = this.page.locator(messageSelector(this, 'error')).first();
   if (await error.isVisible({ timeout: 1000 }).catch(() => false)) {
     throw friendly({
       message: `Adding the "${title}" link to the "${menu}" menu failed.`,
@@ -455,4 +519,4 @@ When(/^(I |we )*add a menu link titled "([^"]*)" to "([^"]*)" in the "([^"]*)" m
   }
 });
 
-module.exports = { rememberCreated };
+module.exports = { rememberCreated, toggleFormSection, operateFormSection };
