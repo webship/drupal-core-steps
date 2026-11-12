@@ -6,7 +6,73 @@
 // (45 seconds, so a locator failure reaches its friendly message before
 // cucumber's own timeout). A `timeout` key here is ignored; raise or lower it
 // with WEBSHIP_STEP_TIMEOUT=<milliseconds>.
-module.exports = {
+// The Drupal major version of the site under test: 11 (the default) or 12.
+// A scenario tagged @drupal11 or @drupal12 applies to that version only.
+const otherMajorTag = String(process.env.DRUPAL_MAJOR || '11') === '12' ? '@drupal11' : '@drupal12';
+
+// The accounts of the site under test, by the handle a feature file uses.
+// They exist before the suite starts: the site's build creates them.
+const users = {
+  // The account the installer created.
+  admin: {
+    username: process.env.DRUPAL_ADMIN_USER || 'admin',
+    password: process.env.DRUPAL_ADMIN_PASS || 'admin',
+    email: process.env.DRUPAL_ADMIN_MAIL || 'admin@example.com',
+    isAdmin: true,
+  },
+  // An account with the Content editor role of the Standard profile.
+  editor: {
+    username: process.env.DRUPAL_EDITOR_USER || 'editor',
+    password: process.env.DRUPAL_EDITOR_PASS || 'editor',
+    email: process.env.DRUPAL_EDITOR_MAIL || 'editor@example.com',
+    roles: ['content_editor'],
+  },
+  // An account with no role at all, for the scenarios that prove a plain
+  // login does not reach the back end.
+  authenticated: {
+    username: process.env.DRUPAL_AUTHENTICATED_USER || 'authenticated',
+    password: process.env.DRUPAL_AUTHENTICATED_PASS || 'authenticated',
+    email: process.env.DRUPAL_AUTHENTICATED_MAIL || 'authenticated@example.com',
+    roles: [],
+  },
+  // A name longer than 20 characters, which the People listing prints
+  // truncated.
+  reviewer: {
+    username: process.env.DRUPAL_REVIEWER_USER || 'reviewer_with_a_long_name',
+    password: process.env.DRUPAL_REVIEWER_PASS || 'reviewer',
+    email: process.env.DRUPAL_REVIEWER_MAIL || 'reviewer@example.com',
+    roles: ['content_editor'],
+  },
+  // Not an account: the name and email a visitor types into forms that ask
+  // for them (the contact form).
+  anonymous: {
+    name: process.env.DRUPAL_ANONYMOUS_NAME || 'Webship QA',
+    email: process.env.DRUPAL_ANONYMOUS_EMAIL || 'qa@example.com',
+  },
+};
+
+// Optional. The registry of the "provisioning" profile below, for a project
+// that wants its suite to create and remove accounts itself with "I add the
+// testing users" and "I delete the testing users": the installer's account,
+// which is never created or removed, and two accounts that exist only while
+// that profile's feature runs.
+const provisioningUsers = {
+  admin: users.admin,
+  temporary_editor: {
+    username: 'temporary_editor_with_a_long_name',
+    password: 'temporary-editor',
+    email: 'temporary-editor@example.com',
+    roles: ['content_editor'],
+  },
+  temporary_member: {
+    username: 'temporary_member',
+    password: 'temporary-member',
+    email: 'temporary-member@example.com',
+    roles: [],
+  },
+};
+
+const config = {
   default: {
     requireModule: ['tsx/cjs'],
     require: [
@@ -16,8 +82,10 @@ module.exports = {
     ],
     // FEATURES=tests/features/login.feature,tests/features/logout.feature runs a subset.
     paths: process.env.FEATURES ? process.env.FEATURES.split(',') : ['tests/features/**/*.feature'],
-    // Scenarios marked work-in-progress or auth-state setup stay out of the default run.
-    tags: process.env.CUCUMBER_TAGS || 'not @wip and not @auth-setup',
+    // Scenarios marked work-in-progress or auth-state setup stay out of the
+    // default run, and so do the optional provisioning feature and the
+    // scenarios that apply to the other Drupal major version only.
+    tags: process.env.CUCUMBER_TAGS || `not @wip and not @auth-setup and not @provisioning and not ${otherMajorTag}`,
     format: [
       '@cucumber/pretty-formatter',
       'json:tests/reports/cucumber_report.json',
@@ -39,54 +107,23 @@ module.exports = {
 
       // ---------------------------------------------------------------------
       // Users registry: the accounts "I am a logged in user with the "<handle>"
-      // user" logs in as. Keys are the handles feature files use; each entry
-      // holds the real username and password, read from the environment so no
-      // credential lives in a feature file or in version control. A Drupal core
-      // Standard install has the "administrator" and "content editor" roles;
-      // "authenticated" is an account with no role at all, for the scenarios
-      // that prove a plain login does not reach the back end.
+      // user" logs in as. Accounts are configuration: the build of the site
+      // creates them (this repository's CI does it with drush, see
+      // .github/workflows/test.yml), this registry names them, and the
+      // features only log in. Keys are the handles feature files use; each
+      // entry holds the real username and password, read from the environment
+      // so no credential lives in a feature file or in version control.
       // ---------------------------------------------------------------------
-      users: {
-        // The installer's account; "I add the testing users" never creates it.
-        admin: {
-          username: process.env.DRUPAL_ADMIN_USER || 'admin',
-          password: process.env.DRUPAL_ADMIN_PASS || 'admin',
-          email: process.env.DRUPAL_ADMIN_MAIL || 'admin@example.com',
-          isAdmin: true,
-        },
-        // Accounts "I add the testing users" creates with these roles.
-        editor: {
-          username: process.env.DRUPAL_EDITOR_USER || 'editor',
-          password: process.env.DRUPAL_EDITOR_PASS || 'editor',
-          email: process.env.DRUPAL_EDITOR_MAIL || 'editor@example.com',
-          roles: ['content_editor'],
-        },
-        authenticated: {
-          username: process.env.DRUPAL_AUTHENTICATED_USER || 'authenticated',
-          password: process.env.DRUPAL_AUTHENTICATED_PASS || 'authenticated',
-          email: process.env.DRUPAL_AUTHENTICATED_MAIL || 'authenticated@example.com',
-          roles: [],
-        },
-        // A name longer than 20 characters: the People listing prints it
-        // truncated, which the lookup behind "I add the testing users" handles.
-        reviewer: {
-          username: process.env.DRUPAL_REVIEWER_USER || 'reviewer_with_a_long_name',
-          password: process.env.DRUPAL_REVIEWER_PASS || 'reviewer',
-          email: process.env.DRUPAL_REVIEWER_MAIL || 'reviewer@example.com',
-          roles: ['content_editor'],
-        },
-        // Not an account: the name and email an anonymous visitor types into
-        // forms that ask for them (the contact form).
-        anonymous: {
-          name: process.env.DRUPAL_ANONYMOUS_NAME || 'Webship QA',
-          email: process.env.DRUPAL_ANONYMOUS_EMAIL || 'qa@example.com',
-        },
-      },
+      users,
 
-      // A site that protects its login form with Honeypot refuses a form sent
-      // within its time limit (2 seconds by default): hold the login submit
-      // back for that long. Milliseconds; 0 on a site without Honeypot.
+      // A site that protects its login form with a time limit (the Honeypot
+      // module: 2 seconds by default) refuses a form sent sooner: hold the
+      // login submit back for that long. Milliseconds; 0 on a site without it.
       loginWait: parseInt(process.env.DRUPAL_LOGIN_WAIT || '0', 10),
+
+      // What "I wait out the form time limit" waits in front of the submit of
+      // any other protected form. Milliseconds.
+      formWait: parseInt(process.env.DRUPAL_FORM_WAIT || '5000', 10),
 
       // How long a page gets to settle after a navigation (milliseconds); the
       // hooks' values are extra waits around scenarios and steps.
@@ -172,3 +209,14 @@ module.exports = {
     },
   },
 };
+
+// Optional: `npx cucumber-js --config cucumber.js --profile provisioning` runs
+// only the feature that creates and removes accounts through the People
+// administration, with its own registry.
+config.provisioning = Object.assign({}, config.default, {
+  tags: '@provisioning',
+  format: ['@cucumber/pretty-formatter', 'json:tests/reports/cucumber_report_provisioning.json'],
+  worldParameters: Object.assign({}, config.default.worldParameters, { users: provisioningUsers }),
+});
+
+module.exports = config;
