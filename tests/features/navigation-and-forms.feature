@@ -22,7 +22,7 @@ Feature: Navigation module and the node form
   Scenario: The node form refuses an empty title and saves through the Save button
     Given I am a logged in user with the "admin" user
     And I am adding a "page"
-    When I save the content
+    When I try to save the content
     Then the "Title" field should block submission as required
     When I fill in "Title" with "Saved through the Save button"
     And I save the content

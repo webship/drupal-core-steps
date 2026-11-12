@@ -424,6 +424,42 @@ function resolveUser(world, handle) {
 // ---------------------------------------------------------------------------
 
 /**
+ * The fields that stop the browser from submitting a form: every control of
+ * the form the submit button belongs to that fails HTML5 constraint
+ * validation (an empty required field, a malformed email address), with its
+ * label and the browser's own message. Empty when the form, or the button,
+ * opts out of validation (`novalidate`, `formnovalidate`).
+ *
+ * @param {import('playwright').Page} page
+ * @param {string} selector - CSS selector(s) for the submit control.
+ * @param {string} [formSelector] - The form, when no button matches.
+ * @returns {Promise<Array<{label: string, name: string, message: string}>>}
+ */
+async function blockingFields(page, selector, formSelector) {
+  return page.evaluate(({ selector, formSelector }) => {
+    const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+    let candidates = [];
+    try { candidates = [...document.querySelectorAll(selector)]; } catch (e) { candidates = []; }
+    const button = candidates.find((el) => el.offsetParent !== null) || candidates[0] || null;
+    let form = (button && button.form) || null;
+    if (!form && !button && formSelector) {
+      try { form = document.querySelector(formSelector); } catch (e) { form = null; }
+    }
+    if (!form || !button || form.noValidate || button.formNoValidate) return [];
+    return [...form.elements]
+      .filter((el) => el.willValidate && !el.checkValidity())
+      .map((el) => {
+        const label = el.id ? form.querySelector(`label[for="${el.id}"]`) || document.querySelector(`label[for="${el.id}"]`) : null;
+        return {
+          label: norm(label ? label.textContent : (el.getAttribute('aria-label') || el.name || el.id)),
+          name: el.name || el.id || '',
+          message: el.validationMessage,
+        };
+      });
+  }, { selector, formSelector }).catch(() => []);
+}
+
+/**
  * Submit a form by dispatching the submit button's click inside the page, and
  * wait for the navigation it causes before settling.
  *
@@ -433,6 +469,12 @@ function resolveUser(world, handle) {
  * in-page dispatch runs the button's own handlers regardless of what is drawn
  * on top of it. The click and the navigation wait start together in a
  * `Promise.all` so a fast redirect cannot complete before the wait is armed.
+ *
+ * When the browser will refuse the submit (a required field is empty), no
+ * navigation can follow: the button is still clicked, so the browser shows
+ * its own message, but nothing is waited for. The blocking fields are kept
+ * on `world._drupalSubmitBlocked` (an empty list after a submit that went
+ * through) for the step to report or to assert on.
  *
  * `selector` may list several candidates; the first visible one is clicked,
  * and when none is visible the first match is. With no match at all the
@@ -446,25 +488,50 @@ function resolveUser(world, handle) {
 async function submitInPage(world, selector, formSelector) {
   const page = world.page;
   let found = false;
+  const click = () => page.evaluate(({ selector, formSelector }) => {
+    const candidates = [...document.querySelectorAll(selector)];
+    const visible = candidates.find((el) => el.offsetParent !== null) || candidates[0];
+    if (visible) {
+      visible.click();
+      return true;
+    }
+    const form = (formSelector && document.querySelector(formSelector)) || document.forms[0];
+    if (form) {
+      form.submit();
+      return true;
+    }
+    return false;
+  }, { selector, formSelector }).then((ok) => { found = ok; });
+  const blocked = await blockingFields(page, selector, formSelector);
+  world._drupalSubmitBlocked = blocked;
+  if (blocked.length) {
+    await click();
+    return found;
+  }
   await Promise.all([
     page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: WAIT_TIMEOUT }).catch(() => {}),
-    page.evaluate(({ selector, formSelector }) => {
-      const candidates = [...document.querySelectorAll(selector)];
-      const visible = candidates.find((el) => el.offsetParent !== null) || candidates[0];
-      if (visible) {
-        visible.click();
-        return true;
-      }
-      const form = (formSelector && document.querySelector(formSelector)) || document.forms[0];
-      if (form) {
-        form.submit();
-        return true;
-      }
-      return false;
-    }, { selector, formSelector }).then((ok) => { found = ok; }),
+    click(),
   ]);
   await smartSettle(page, budget(world));
   return found;
+}
+
+/**
+ * Fail with the browser's own validation message when the last
+ * `submitInPage` was refused by the browser, naming each blocking field.
+ *
+ * @param {object} world - The cucumber World.
+ * @param {string} what - The form, for the message ("the node form").
+ * @returns {void}
+ */
+function failIfSubmitBlocked(world, what) {
+  const blocked = world._drupalSubmitBlocked || [];
+  if (!blocked.length) return;
+  throw friendly({
+    message: `The browser refused to submit ${what}.`,
+    cause: blocked.map((field) => `"${field.label}": ${field.message}`).join(' | '),
+    hint: 'Fill the fields named above first. A scenario that expects the refusal uses "I try to save the content" and then "the \\"...\\" field should block submission as required".',
+  });
 }
 
 /**
@@ -824,7 +891,9 @@ module.exports = {
   assertPresence,
   assertContainsText,
   resolveUser,
+  blockingFields,
   submitInPage,
+  failIfSubmitBlocked,
   loginWithForm,
   isAuthenticated,
   waitForAuthenticated,
