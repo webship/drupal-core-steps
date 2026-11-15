@@ -291,6 +291,180 @@ function navigationHeaders(world) {
 }
 
 // ---------------------------------------------------------------------------
+// Users registry and session
+// ---------------------------------------------------------------------------
+
+/**
+ * Log in as a user from the `worldParameters.users` registry in cucumber.js,
+ * by its handle rather than by typing credentials into the feature file:
+ *
+ *   users: {
+ *     admin:  { username: 'admin',  password: process.env.DRUPAL_ADMIN_PASS || 'admin' },
+ *     editor: { username: 'editor', password: process.env.DRUPAL_EDITOR_PASS || 'editor' },
+ *   }
+ *
+ * Opens `/user/login`, fills `#edit-name` and `#edit-pass` and submits by
+ * dispatching the submit button's click inside the page, with the navigation
+ * wait armed in the same `Promise.all`, then settles the landing page. The
+ * in-page submit is what keeps the login reliable under a sticky bar, a chat
+ * widget or a cookie banner that covers the button and would otherwise turn a
+ * pointer click into an actionability timeout.
+ *
+ * For suites that log in often, pair it once with webship-js's "I save the
+ * auth state to" step and restore that state in the other scenarios.
+ *
+ * Example #1: Given I am a logged in user with the "admin" user
+ * Example #2: Given I am a logged in user with the username "editor"
+ * Example #3: Given we are a logged in user with "admin"
+ * Example #4: Given a logged in user with the "editor" user
+ * Example #5: And I am a logged in user with the "content editor" user
+ *
+ */
+Given(/^(I am |we are )*a logged in user with( the)*( username)* "([^"]*)?"( user)*$/, async function (pronounCase, theCase, usernameCase, handle, userCase) {
+  const user = resolveUser(this, handle);
+  if (!supplied(user.password)) {
+    throw friendly({
+      message: `User "${handle}" has no password configured.`,
+      hint: 'Set users.<handle>.password in cucumber.js worldParameters (an environment variable is the usual source).',
+    });
+  }
+  await loginWithForm(this, user.username, user.password);
+});
+
+// ---------------------------------------------------------------------------
+// Authentication
+// ---------------------------------------------------------------------------
+
+/**
+ * Fill and submit the login form (`#edit-name`, `#edit-pass`, `#edit-submit`).
+ *
+ * Example #1: When I log in as "admin" with password "admin"
+ * Example #2: And we log in as "editor" with password "p@ssw0rd"
+ * Example #3: When log in as "reviewer" with password "hunter2"
+ * Example #4: And I sign in as "site_manager" with password "letmein"
+ * Example #5: When we sign in as "admin" with password "admin"
+ *
+ */
+When(/^(I |we )*(?:log in|sign in) as "([^"]*)?" with password "([^"]*)?"$/, async function (pronounCase, username, password) {
+  const defaultTime = this.minWaitTime.page || 3000;
+  await fillField(this.page, 'name', username);
+  await fillField(this.page, 'pass', password);
+  await submitInPage(this, `${LOGIN_FORM.split(', ').map((form) => `${form} [data-drupal-selector="edit-submit"]`).join(', ')}, #edit-submit`, LOGIN_FORM);
+  await waitForPageLoad(this.page, defaultTime);
+});
+
+/**
+ * Log the current session out via `/user/logout`.
+ *
+ * As of core 10.3 a bare GET to `/user/logout` no longer ends the session: it
+ * renders a CSRF-protected confirmation form (`#user-logout-confirm`) instead.
+ * This step submits that confirmation when it appears, and falls through
+ * unchanged on older versions that log out on the GET itself.
+ *
+ * Example #1: When I log out
+ * Example #2: And we log out
+ * Example #3: When I logout
+ * Example #4: And I sign out
+ * Example #5: When we sign out
+ *
+ */
+When(/^(I |we )*(?:log ?out|sign out)$/, async function (pronounCase) {
+  const defaultTime = this.minWaitTime.page || 3000;
+  await gotoUrl(this.page, this.launchUrl + '/user/logout');
+  await this.page.waitForSelector('body', { state: 'attached', timeout: WAIT_TIMEOUT });
+  await waitForPageLoad(this.page, defaultTime);
+  const confirmSubmit = this.page.locator('#user-logout-confirm #edit-submit');
+  if (await confirmSubmit.isVisible({ timeout: 5000 }).catch(() => false)) {
+    await confirmSubmit.click();
+    await waitForPageLoad(this.page, defaultTime);
+  }
+});
+
+/**
+ * Make sure the session is anonymous: drop the browser's cookies and web
+ * storage, reload, then confirm by opening `/user/login` and seeing the login
+ * form (an authenticated visitor is redirected to their profile instead).
+ *
+ * The companion of the login step above for the "Given" half of an
+ * access-control scenario. webship-js's "I am an anonymous user" clears the
+ * cookies and opens the front page; this one additionally proves the site
+ * treats the session as anonymous.
+ *
+ * Example #1: Given I am not logged in
+ * Example #2: Given we are not logged in
+ * Example #3: Given not logged in
+ * Example #4: And I am not logged in
+ * Example #5: But I am not logged in
+ *
+ */
+Given(/^(I am |we are )*not logged in$/, async function (pronounCase) {
+  await this.context.clearCookies();
+  await this.page.evaluate(() => {
+    try { window.localStorage.clear(); } catch (e) { /* storage may be unavailable */ }
+    try { window.sessionStorage.clear(); } catch (e) { /* storage may be unavailable */ }
+  }).catch(() => {});
+  if (/^https?:/.test(this.page.url())) {
+    await this.page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
+  }
+  await navigate(this, '/user/login');
+  await assertPresence(
+    this.page.locator(FORMS.login.selector).first(),
+    undefined,
+    'the login form (the session should be anonymous)'
+  );
+});
+
+/**
+ * Assert the session is, or is not, authenticated: the `user-logged-in` body
+ * class, `drupalSettings.user.uid` or a logout link on the page, and when a
+ * theme shows none of them, the site's own answer (an authenticated visitor is
+ * redirected away from `/user/login`). The negative form is what confirms a
+ * logout actually destroyed the session rather than merely redirecting.
+ *
+ * Example #1: Then I should be logged in
+ * Example #2: And we should be signed in
+ * Example #3: Then should be authenticated
+ * Example #4: And I should not be logged in
+ * Example #5: Then we should not be authenticated
+ *
+ */
+Then(/^(I |we )*should( not)* be (?:logged in|signed in|authenticated)$/, async function (pronounCase, notCase) {
+  const expected = !notCase;
+  if (await waitForAuthenticated(this, budget(this), expected)) return;
+  throw friendly({
+    message: expected ? 'Expected an authenticated session.' : 'Expected an anonymous session.',
+    cause: expected
+      ? 'The page shows no sign of a session (the "user-logged-in" body class, drupalSettings.user.uid, a logout link) and /user/login still serves the form.'
+      : 'The page still shows a session (the "user-logged-in" body class, drupalSettings.user.uid or a logout link), or /user/login redirects to an account page.',
+    hint: expected
+      ? 'Log in first (Given I am a logged in user with the "<handle>" user).'
+      : 'Log out first (When I log out), or start the scenario anonymous (Given I am not logged in).',
+  });
+});
+
+/**
+ * Submit the one-time-login request form at `/user/password`, which core keys
+ * by either a username or an email address in the same `name` field.
+ *
+ * The form must be on screen already (pair the step with "Given I am on the
+ * password reset page"), so the step stays usable when the form is reached from
+ * the login screen's own tab instead.
+ *
+ * Example #1: When I request a new password for "admin"
+ * Example #2: And we request a new password for "editor"
+ * Example #3: When request a password reset for "admin@example.com"
+ * Example #4: And I request a password reset for "no-such-user"
+ * Example #5: When we request a new password for "site_manager"
+ *
+ */
+When(/^(I |we )*request a (?:new password|password reset) for "([^"]*)?"$/, async function (pronounCase, identifier) {
+  const defaultTime = this.minWaitTime.page || 3000;
+  await fillField(this.page, 'name', identifier);
+  await submitInPage(this, 'form[data-drupal-selector="user-pass"] [data-drupal-selector="edit-submit"], #user-pass #edit-submit, #edit-submit', '#user-pass, form.user-pass');
+  await waitForPageLoad(this.page, defaultTime);
+});
+
+// ---------------------------------------------------------------------------
 // Navigation to well-known pages
 // ---------------------------------------------------------------------------
 
@@ -821,105 +995,6 @@ Then(/^(I |we )*should see (an empty|a non-?empty) (?:view|listing)$/, async fun
 });
 
 // ---------------------------------------------------------------------------
-// Authentication
-// ---------------------------------------------------------------------------
-
-/**
- * Fill and submit the login form (`#edit-name`, `#edit-pass`, `#edit-submit`).
- *
- * Example #1: When I log in as "admin" with password "admin"
- * Example #2: And we log in as "editor" with password "p@ssw0rd"
- * Example #3: When log in as "reviewer" with password "hunter2"
- * Example #4: And I sign in as "site_manager" with password "letmein"
- * Example #5: When we sign in as "admin" with password "admin"
- *
- */
-When(/^(I |we )*(?:log in|sign in) as "([^"]*)?" with password "([^"]*)?"$/, async function (pronounCase, username, password) {
-  const defaultTime = this.minWaitTime.page || 3000;
-  await fillField(this.page, 'name', username);
-  await fillField(this.page, 'pass', password);
-  await submitInPage(this, `${LOGIN_FORM.split(', ').map((form) => `${form} [data-drupal-selector="edit-submit"]`).join(', ')}, #edit-submit`, LOGIN_FORM);
-  await waitForPageLoad(this.page, defaultTime);
-});
-
-/**
- * Assert the session is, or is not, authenticated: the `user-logged-in` body
- * class, `drupalSettings.user.uid` or a logout link on the page, and when a
- * theme shows none of them, the site's own answer (an authenticated visitor is
- * redirected away from `/user/login`). The negative form is what confirms a
- * logout actually destroyed the session rather than merely redirecting.
- *
- * Example #1: Then I should be logged in
- * Example #2: And we should be signed in
- * Example #3: Then should be authenticated
- * Example #4: And I should not be logged in
- * Example #5: Then we should not be authenticated
- *
- */
-Then(/^(I |we )*should( not)* be (?:logged in|signed in|authenticated)$/, async function (pronounCase, notCase) {
-  const expected = !notCase;
-  if (await waitForAuthenticated(this, budget(this), expected)) return;
-  throw friendly({
-    message: expected ? 'Expected an authenticated session.' : 'Expected an anonymous session.',
-    cause: expected
-      ? 'The page shows no sign of a session (the "user-logged-in" body class, drupalSettings.user.uid, a logout link) and /user/login still serves the form.'
-      : 'The page still shows a session (the "user-logged-in" body class, drupalSettings.user.uid or a logout link), or /user/login redirects to an account page.',
-    hint: expected
-      ? 'Log in first (Given I am a logged in user with the "<handle>" user).'
-      : 'Log out first (When I log out), or start the scenario anonymous (Given I am not logged in).',
-  });
-});
-
-/**
- * Log the current session out via `/user/logout`.
- *
- * As of core 10.3 a bare GET to `/user/logout` no longer ends the session: it
- * renders a CSRF-protected confirmation form (`#user-logout-confirm`) instead.
- * This step submits that confirmation when it appears, and falls through
- * unchanged on older versions that log out on the GET itself.
- *
- * Example #1: When I log out
- * Example #2: And we log out
- * Example #3: When I logout
- * Example #4: And I sign out
- * Example #5: When we sign out
- *
- */
-When(/^(I |we )*(?:log ?out|sign out)$/, async function (pronounCase) {
-  const defaultTime = this.minWaitTime.page || 3000;
-  await gotoUrl(this.page, this.launchUrl + '/user/logout');
-  await this.page.waitForSelector('body', { state: 'attached', timeout: WAIT_TIMEOUT });
-  await waitForPageLoad(this.page, defaultTime);
-  const confirmSubmit = this.page.locator('#user-logout-confirm #edit-submit');
-  if (await confirmSubmit.isVisible({ timeout: 5000 }).catch(() => false)) {
-    await confirmSubmit.click();
-    await waitForPageLoad(this.page, defaultTime);
-  }
-});
-
-/**
- * Submit the one-time-login request form at `/user/password`, which core keys
- * by either a username or an email address in the same `name` field.
- *
- * The form must be on screen already (pair the step with "Given I am on the
- * password reset page"), so the step stays usable when the form is reached from
- * the login screen's own tab instead.
- *
- * Example #1: When I request a new password for "admin"
- * Example #2: And we request a new password for "editor"
- * Example #3: When request a password reset for "admin@example.com"
- * Example #4: And I request a password reset for "no-such-user"
- * Example #5: When we request a new password for "site_manager"
- *
- */
-When(/^(I |we )*request a (?:new password|password reset) for "([^"]*)?"$/, async function (pronounCase, identifier) {
-  const defaultTime = this.minWaitTime.page || 3000;
-  await fillField(this.page, 'name', identifier);
-  await submitInPage(this, 'form[data-drupal-selector="user-pass"] [data-drupal-selector="edit-submit"], #user-pass #edit-submit, #edit-submit', '#user-pass, form.user-pass');
-  await waitForPageLoad(this.page, defaultTime);
-});
-
-// ---------------------------------------------------------------------------
 // Search
 // ---------------------------------------------------------------------------
 
@@ -1154,79 +1229,8 @@ Then(/^(?:the )?(?:page|response) should( not)* be served from the (dynamic page
 });
 
 // ---------------------------------------------------------------------------
-// Users registry and session
+// Response status for the current session
 // ---------------------------------------------------------------------------
-
-/**
- * Log in as a user from the `worldParameters.users` registry in cucumber.js,
- * by its handle rather than by typing credentials into the feature file:
- *
- *   users: {
- *     admin:  { username: 'admin',  password: process.env.DRUPAL_ADMIN_PASS || 'admin' },
- *     editor: { username: 'editor', password: process.env.DRUPAL_EDITOR_PASS || 'editor' },
- *   }
- *
- * Opens `/user/login`, fills `#edit-name` and `#edit-pass` and submits by
- * dispatching the submit button's click inside the page, with the navigation
- * wait armed in the same `Promise.all`, then settles the landing page. The
- * in-page submit is what keeps the login reliable under a sticky bar, a chat
- * widget or a cookie banner that covers the button and would otherwise turn a
- * pointer click into an actionability timeout.
- *
- * For suites that log in often, pair it once with webship-js's "I save the
- * auth state to" step and restore that state in the other scenarios.
- *
- * Example #1: Given I am a logged in user with the "admin" user
- * Example #2: Given I am a logged in user with the username "editor"
- * Example #3: Given we are a logged in user with "admin"
- * Example #4: Given a logged in user with the "editor" user
- * Example #5: And I am a logged in user with the "content editor" user
- *
- */
-Given(/^(I am |we are )*a logged in user with( the)*( username)* "([^"]*)?"( user)*$/, async function (pronounCase, theCase, usernameCase, handle, userCase) {
-  const user = resolveUser(this, handle);
-  if (!supplied(user.password)) {
-    throw friendly({
-      message: `User "${handle}" has no password configured.`,
-      hint: 'Set users.<handle>.password in cucumber.js worldParameters (an environment variable is the usual source).',
-    });
-  }
-  await loginWithForm(this, user.username, user.password);
-});
-
-/**
- * Make sure the session is anonymous: drop the browser's cookies and web
- * storage, reload, then confirm by opening `/user/login` and seeing the login
- * form (an authenticated visitor is redirected to their profile instead).
- *
- * The companion of the login step above for the "Given" half of an
- * access-control scenario. webship-js's "I am an anonymous user" clears the
- * cookies and opens the front page; this one additionally proves the site
- * treats the session as anonymous.
- *
- * Example #1: Given I am not logged in
- * Example #2: Given we are not logged in
- * Example #3: Given not logged in
- * Example #4: And I am not logged in
- * Example #5: But I am not logged in
- *
- */
-Given(/^(I am |we are )*not logged in$/, async function (pronounCase) {
-  await this.context.clearCookies();
-  await this.page.evaluate(() => {
-    try { window.localStorage.clear(); } catch (e) { /* storage may be unavailable */ }
-    try { window.sessionStorage.clear(); } catch (e) { /* storage may be unavailable */ }
-  }).catch(() => {});
-  if (/^https?:/.test(this.page.url())) {
-    await this.page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
-  }
-  await navigate(this, '/user/login');
-  await assertPresence(
-    this.page.locator(FORMS.login.selector).first(),
-    undefined,
-    'the login form (the session should be anonymous)'
-  );
-});
 
 /**
  * Assert the HTTP status the *current session* gets for the current page, by

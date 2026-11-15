@@ -27,7 +27,7 @@ There is no lint or typecheck script. `tsx/cjs` lets `playwright.config.ts` load
 
 - `tests/step-definitions/drupal-helpers.js`: no steps. Named selectors, page facts (`drupalSettings`), messages, the users registry, the in-page submit, field and editor helpers, session and visitor status.
 - `tests/step-definitions/drupal-defaults.js`: no steps. Two hooks: the selector preset and the assets folder.
-- `tests/step-definitions/drupal-core.steps.js`: named pages and forms, page state, messages, content, sessions, search, contact, error pages, cache headers, listings, editor, media library.
+- `tests/step-definitions/drupal-core.steps.js`: sessions (login first), named pages and forms, page state, messages, content, search, contact, error pages, cache headers, listings, editor, media library.
 - `drupal-access.steps.js` (access control, PHP errors), `drupal-form.steps.js` (form sections, the form time limit, AJAX, confirmation forms, editor links, created content, terms, menu links), `drupal-content-forms.steps.js` (content types, Save, required fields, moderation), `drupal-site.steps.js` (modules, themes, roles, permissions, status report, menus, front page, canonical URL, meta tags), `drupal-navigation.steps.js` (Navigation module), `drupal-layout-builder.steps.js`.
 - `drupal-users.steps.js`: OPTIONAL provisioning steps. See "Accounts" below.
 - `tests/selectors/drupal-core.json`: the named-selector preset.
