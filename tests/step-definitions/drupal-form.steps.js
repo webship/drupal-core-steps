@@ -586,10 +586,13 @@ async function listedIds(world, path, title, pattern) {
   const url = joinUrl(world.launchUrl, path);
   const response = await world.page.request.get(url, { failOnStatusCode: false });
   if (response.status() !== 200) {
+    const denied = response.status() === 403;
     throw friendly({
-      message: `Could not read ${path}.`,
+      message: denied ? `This account may not open ${path}, so nothing was deleted.` : `Could not read ${path}.`,
       cause: `${url} answered ${response.status()}`,
-      hint: 'Log in first as a user who may administer the site, and check the machine name in the step.',
+      hint: denied
+        ? 'An account that may create an item is not always allowed to list or delete it: the Content editor role of the Standard profile creates and edits Tags terms, and has neither "Access the taxonomy vocabulary overview page" nor "Delete terms". Log in as an administrator for the cleanup step.'
+        : 'Log in first as a user who may administer the site, and check the machine name in the step.',
     });
   }
   const html = await response.text();
@@ -613,7 +616,10 @@ async function listedIds(world, path, title, pattern) {
 /**
  * Delete the taxonomy terms with a given name from a vocabulary, through
  * each term's delete form, so a scenario that created a term leaves the site
- * as it found it. Passes when no such term exists.
+ * as it found it. Passes when no such term exists. The account needs the
+ * vocabulary overview and the right to delete its terms: the Content editor
+ * role of the Standard profile may create a Tags term and may not delete it,
+ * so log in as an administrator for the cleanup.
  *
  * Example #1: When I delete the "tags" taxonomy term named "Playwright"
  * Example #2: And I delete the "tags" taxonomy term named "Cucumber"
