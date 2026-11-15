@@ -1,3 +1,5 @@
+<p align="center"><img src="https://raw.githubusercontent.com/webship/drupal-core-steps/2.0.x/assets/logo.svg" alt="Drupal logo" width="96"></p>
+
 # drupal-core-steps
 
 [![Test](https://github.com/webship/drupal-core-steps/actions/workflows/test.yml/badge.svg)](https://github.com/webship/drupal-core-steps/actions/workflows/test.yml)
@@ -320,3 +322,7 @@ Issues and pull requests are welcome at [github.com/webship/drupal-core-steps](h
 ## License
 
 MIT © Webship.co. See [LICENSE](LICENSE).
+
+## Logo
+
+The Drupal logo in this README comes from Simple Icons 16.37.0 (CC0-1.0), filled with the colour the set lists for the brand. The Drupal name and logo are trademarks of their owner; this pack is not affiliated with or endorsed by them.
