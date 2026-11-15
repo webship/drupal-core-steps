@@ -52,9 +52,11 @@ Feature: Content lifecycle
     And I am on "/admin/structure/taxonomy/manage/tags/overview"
     Then I should not see "Lifecycle tag"
 
+  # On Drupal 11 the Content editor role creates and edits Tags terms and may
+  # not delete them, so the cleanup is the administrator's. On Drupal 12 the
+  # role may not open the term form at all.
+  @drupal11
   Scenario: A content editor creates a term and an administrator removes it
-    # The Content editor role creates and edits Tags terms and may not delete
-    # them, so the cleanup is the administrator's.
     Given I am a logged in user with the "editor" user
     When I create a "tags" taxonomy term named "Editor lifecycle tag"
     Then I should see a status message "Created new term"
