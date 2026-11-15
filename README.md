@@ -31,7 +31,7 @@ Feature: Editorial access
 
 | Area | Steps (examples) |
 | --- | --- |
-| Accounts and sessions | `I am a logged in user with the "editor" user`, `I am not logged in`, `I log out`, `I should (not) be logged in`, `I log in as "…" with password "…"`, `I request a new password for "…"` |
+| Accounts and sessions | `I am a logged in user with the "editor" user`, `I log in as "…" with password "…"`, `I log out`, `I am not logged in`, `I should (not) be logged in`, `I request a new password for "…"` |
 | Access control | `I should be denied access to "/admin/people"`, `I should be allowed access to "/admin/content"`, `the page should be access restricted`, `I should (not) be able to edit the content at "/sample-article"`, `the page should return HTTP status 403` (for the current session) |
 | Roles and permissions | `the "Content editor" role should exist`, `the "Content editor" role should (not) have the "access content overview" permission` |
 | Named pages and forms | `I am on the login page` (also: password reset, registration, search, contact, administration, content overview, people, modules, appearance, status report, add content, my account, site information), `I should (not) see the login form` |
