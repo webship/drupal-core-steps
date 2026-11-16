@@ -38,3 +38,27 @@ Feature: Navigation module and the node form
     And the "No such type" content type should not exist
     When I delete the content item I am viewing
     Then I should see a status message "has been deleted."
+
+  Scenario: The more actions menu of the top bar opens on a content item
+    Given I am a logged in user with the "admin" user
+    And I am on "/sample-article"
+    When I open the top bar more actions menu
+    Then I should see "Revisions" in the ".top-bar" element
+    And the top bar should offer the "Delete" action
+
+  # The Standard profile of Drupal 11.4 installs the Navigation module, not
+  # the Toolbar module, and Drupal 12 has no Toolbar module in core.
+  Scenario: The Standard profile shows the navigation sidebar, not the toolbar
+    Given I am a logged in user with the "admin" user
+    And I am on the content overview page
+    Then I should see the navigation sidebar
+    And I should not see the toolbar
+
+  # The build creates the accounts in a fixed order: the reviewer is user 4.
+  Scenario: An entity reference field takes a suggestion of its autocomplete
+    Given I am a logged in user with the "admin" user
+    And I am adding an "article"
+    When I open the "Authoring information" form section
+    And I fill in "Authored by" with "revi"
+    And I choose the "reviewer_with_a_long_name" autocomplete suggestion
+    Then "#edit-uid-0-target-id" should have value "reviewer_with_a_long_name (4)"

@@ -65,6 +65,15 @@ Feature: Content lifecycle
     And I am on "/admin/structure/taxonomy/manage/tags/overview"
     Then I should not see "Editor lifecycle tag"
 
+  Scenario: The content editor may not delete terms
+    Given I am a logged in user with the "admin" user
+    Then the "Content editor" role should not have the "delete terms in tags" permission
+
+  @drupal12
+  Scenario: On Drupal 12 the content editor may not open the term form
+    Given I am a logged in user with the "editor" user
+    Then I should be denied access to "/admin/structure/taxonomy/manage/tags/add"
+
   Scenario: A content item is removed through the confirmation form
     Given I am a logged in user with the "admin" user
     When I create a "page" content item titled "Page to confirm"
