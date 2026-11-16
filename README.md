@@ -122,6 +122,30 @@ When many scenarios log in as the same account, log in once and reuse the sessio
 
 A project that cannot prepare its accounts in the build can let the suite do it; see [Optional: provisioning accounts from the suite](#optional-provisioning-accounts-from-the-suite).
 
+## Test users
+
+The accounts this repository's suite logs in as, exactly as `cucumber.js` lists them in `worldParameters.users` (the default values: each one can be replaced through its environment variable, see [Settings](#settings)). `tests/seed/build-site.sh` creates them on the local test site, and CI does the same on the runner. They are placeholder credentials of that throwaway site, not of any real one.
+
+```json
+{
+  "admin": { "username": "admin", "password": "admin", "email": "admin@example.com", "isAdmin": true },
+  "editor": { "username": "editor", "password": "editor", "email": "editor@example.com", "roles": ["content_editor"] },
+  "authenticated": { "username": "authenticated", "password": "authenticated", "email": "authenticated@example.com", "roles": [] },
+  "reviewer": { "username": "reviewer_with_a_long_name", "password": "reviewer", "email": "reviewer@example.com", "roles": ["content_editor"] },
+  "anonymous": { "name": "Webship QA", "email": "qa@example.com" }
+}
+```
+
+| Handle | The account |
+| --- | --- |
+| `admin` | the account the installer created (`isAdmin: true`: no step ever creates or removes it) |
+| `editor` | a user with the Content editor role of the Standard profile |
+| `authenticated` | a user with no role at all, for the scenarios that prove a plain login does not reach the back end |
+| `reviewer` | a Content editor whose name is longer than 20 characters, which the People listing prints truncated |
+| `anonymous` | not an account: the name and email a visitor types into the contact form |
+
+`Given I am a logged in user with the "editor" user` logs in with the `editor` entry. The optional provisioning profile has its own registry of temporary accounts; see [Optional: provisioning accounts from the suite](#optional-provisioning-accounts-from-the-suite).
+
 ## Settings
 
 Everything the pack reads is under `worldParameters` in `cucumber.js`. Each value has an environment variable, so nothing specific to a site is committed.
