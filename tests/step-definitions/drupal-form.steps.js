@@ -301,7 +301,7 @@ When(/^(I |we )*(?:confirm the (?:deletion|form|action)|submit the confirmation 
  * Example #2: And I fill in the link URL "/node/1"
  * Example #3: When we fill in the link URL "mailto:hello@example.com"
  * Example #4: And I fill in the link URL "Sample"
- * Example #5: When I fill in the link URL "https://www.drupal.org"
+ * Example #5: When I fill in the link URL "https://www.example.org/docs"
  *
  */
 When(/^(I |we )*fill in the link URL "([^"]*)"$/, async function (pronounCase, url) {
@@ -337,7 +337,7 @@ When(/^(I |we )*fill in the link URL "([^"]*)"$/, async function (pronounCase, u
  * rich text editor) by its text, after the field was typed into.
  *
  * Example #1: When I choose the "Sample article" autocomplete suggestion
- * Example #2: And I choose the "Drupal" autocomplete suggestion
+ * Example #2: And I choose the "Getting started" autocomplete suggestion
  * Example #3: When we choose the "editor" autocomplete suggestion
  * Example #4: And I pick the "Sample image" autocomplete suggestion
  * Example #5: When I choose the "About us" autocomplete suggestion
@@ -551,7 +551,7 @@ When(/^(I |we )*create an? "([^"]*)" (?:taxonomy )?term named "([^"]*)"$/, async
  *
  * Example #1: When I add a menu link titled "Sample" to "/sample-article" in the "main" menu
  * Example #2: And I add a menu link titled "Home" to "/" in the "main" menu
- * Example #3: When we add a menu link titled "Drupal" to "https://www.drupal.org" in the "footer" menu
+ * Example #3: When we add a menu link titled "Documentation" to "https://www.example.org/docs" in the "footer" menu
  * Example #4: And I add a menu link titled "Log in" to "/user/login" in the "account" menu
  * Example #5: When I add a menu link titled "Node one" to "/node/1" in the "main" menu
  *
@@ -646,7 +646,7 @@ When(/^(I |we )*delete the "([^"]*)" (?:taxonomy )?terms? named "([^"]*)"$/, asy
  *
  * Example #1: When I delete the menu link titled "Sample" from the "main" menu
  * Example #2: And I delete the menu link titled "Home page" from the "main" menu
- * Example #3: When we delete the menu link titled "Drupal" from the "footer" menu
+ * Example #3: When we delete the menu link titled "Documentation" from the "footer" menu
  * Example #4: And I delete the menu links titled "Log in" from the "account" menu
  * Example #5: When I delete the menu links titled "Node one" from the "main" menu
  *
