@@ -23,7 +23,10 @@
  *     content overview has a row with operations, and the article page shows
  *     the media image;
  *   - the Layout Builder module, enabled on the Article display with
- *     per-item overrides, so the layout steps have a builder to open.
+ *     per-item overrides, so the layout steps have a builder to open;
+ *   - the Content Moderation module and an Editorial workflow applied to a
+ *     "Moderated page" content type of its own, so the moderation steps
+ *     have a moderated item while Article and Basic page stay unmoderated.
  */
 
 use Drupal\Core\File\FileExists;
@@ -134,6 +137,55 @@ $article_display = \Drupal::entityTypeManager()->getStorage('entity_view_display
 if ($article_display && method_exists($article_display, 'enableLayoutBuilder') && !$article_display->isLayoutBuilderEnabled()) {
   $article_display->enableLayoutBuilder()->setOverridable()->save();
   print "Enabled Layout Builder, with overrides, on the Article display.\n";
+}
+
+// 5. Content moderation on a content type of its own, so the moderation
+// steps have a moderated item to act on while Article and Basic page keep
+// their Published checkbox: the states and transitions of core's Editorial
+// workflow (core/recipes/editorial_workflow on Drupal 11), applied to
+// "Moderated page" only.
+if (!\Drupal::moduleHandler()->moduleExists('content_moderation')) {
+  \Drupal::service('module_installer')->install(['content_moderation']);
+  print "Installed the Content Moderation module.\n";
+}
+if (!\Drupal\node\Entity\NodeType::load('moderated_page')) {
+  \Drupal\node\Entity\NodeType::create([
+    'type' => 'moderated_page',
+    'name' => 'Moderated page',
+  ])->save();
+  print "Created the Moderated page content type.\n";
+}
+$workflow = \Drupal\workflows\Entity\Workflow::load('editorial');
+if (!$workflow) {
+  $workflow = \Drupal\workflows\Entity\Workflow::create([
+    'id' => 'editorial',
+    'label' => 'Editorial',
+    'type' => 'content_moderation',
+    'type_settings' => [
+      'states' => [
+        'draft' => ['label' => 'Draft', 'weight' => -5, 'published' => FALSE, 'default_revision' => FALSE],
+        'published' => ['label' => 'Published', 'weight' => 0, 'published' => TRUE, 'default_revision' => TRUE],
+        'archived' => ['label' => 'Archived', 'weight' => 5, 'published' => FALSE, 'default_revision' => TRUE],
+      ],
+      'transitions' => [
+        'create_new_draft' => ['label' => 'Create New Draft', 'from' => ['draft', 'published'], 'to' => 'draft', 'weight' => 0],
+        'publish' => ['label' => 'Publish', 'from' => ['draft', 'published'], 'to' => 'published', 'weight' => 1],
+        'archive' => ['label' => 'Archive', 'from' => ['published'], 'to' => 'archived', 'weight' => 2],
+        'archived_draft' => ['label' => 'Restore to Draft', 'from' => ['archived'], 'to' => 'draft', 'weight' => 3],
+        'archived_published' => ['label' => 'Restore', 'from' => ['archived'], 'to' => 'published', 'weight' => 4],
+      ],
+      'entity_types' => [],
+      'default_moderation_state' => 'draft',
+    ],
+  ]);
+  $workflow->save();
+  print "Created the Editorial workflow.\n";
+}
+$moderation = $workflow->getTypePlugin();
+if (!$moderation->appliesToEntityTypeAndBundle('node', 'moderated_page')) {
+  $moderation->addEntityTypeAndBundle('node', 'moderated_page');
+  $workflow->save();
+  print "Applied the Editorial workflow to Moderated page.\n";
 }
 
 print "Fixtures are in place.\n";

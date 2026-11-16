@@ -312,6 +312,7 @@ What the build adds to a Standard installation:
 | Contact | the core module and a site-wide form | the `contact` project and a site-wide form |
 | Search | the core module, the node search page, an index | the `search` project, the node search page, an index |
 | Fixtures (`tests/seed/standard-fixtures.php`) | a "Media" field on Article, one media item, "Sample article" at `/sample-article`, Layout Builder on the Article display | the same |
+| Content moderation (the same script) | the Content Moderation module and the Editorial workflow (Draft, Published, Archived) applied to a "Moderated page" content type of its own; Article and Basic page stay unmoderated | the same |
 
 | Script | Effect |
 | --- | --- |
