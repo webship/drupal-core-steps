@@ -864,8 +864,10 @@ Then(/^(I |we )*should( not)* see (?:a|the) warning(?: message)?(?: "([^"]*)")?$
  * that it contains that text. Core shows one for a failed validation, for
  * rejected credentials and for access notices alike. Found by
  * `aria-label="Error message"` or a `role="alert"` element inside the
- * `data-drupal-messages` region, then the `.messages--error` class of core's
- * themes, or the "error message" named selector.
+ * `data-drupal-messages` region that is not a warning (Drupal 12's Default
+ * Admin theme and core's JavaScript messages give warnings that role too),
+ * then the `.messages--error` class of core's themes, or the "error message"
+ * named selector.
  *
  * Example #1: Then I should see an error message
  * Example #2: And we should see a validation error

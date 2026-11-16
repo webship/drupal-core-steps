@@ -180,7 +180,7 @@ A Drupal site can run any theme, and a theme decides most class names. The steps
 | `I should be on the front page` | `drupalSettings.path.isFront` | `body.path-frontpage`, then the URL | `front page` |
 | `I should be on an admin page` | `drupalSettings.path.currentPathIsAdmin` | `body.path-admin`, then the `/admin` prefix | `admin page` |
 | `I should be logged in` | `drupalSettings.user.uid`, a logout link | `body.user-logged-in`, then the site's answer for `/user/login` | |
-| `I should see a status / warning / error message` | `aria-label="Status message"` (and the other two), `role="status"` or `role="alert"` inside `[data-drupal-messages]` | `.messages--status` (and the other two) | `status message`, `warning message`, `error message` |
+| `I should see a status / warning / error message` | `aria-label="Status message"` (and the other two), `role="status"` or `role="alert"` inside `[data-drupal-messages]` (a `role="alert"` warning, as Drupal 12 renders it, is not an error) | `.messages--status` (and the other two) | `status message`, `warning message`, `error message` |
 | `I should see the page title "…"` | the `<h1>` of the main region | `h1.page-title`, then the page's part of the document title | `page title` |
 | `I should be on an "article" page` | | `body.page-node-type-article`, `.node--type-article`, then the item's edit form (`data-drupal-selector`) | `content type page` (with `{type}`) |
 | `the content item should be published` | | `.node--unpublished`, then the site's answer to a visitor | `unpublished content` |

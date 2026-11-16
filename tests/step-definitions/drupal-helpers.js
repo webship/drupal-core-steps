@@ -275,7 +275,9 @@ const MESSAGE_TYPES = {
   error: {
     name: 'error message',
     label: 'Error message',
-    fallback: '[aria-label="Error message"], [data-drupal-messages] [role="alert"], .messages--error, [data-drupal-messages] .uk-alert-danger',
+    // Core's Default Admin theme (Drupal 12) and core's JavaScript messages
+    // give warnings role="alert" too: a warning is not an error.
+    fallback: '[aria-label="Error message"], [data-drupal-messages] [role="alert"]:not(.messages--warning):not(.messages--status), .messages--error, [data-drupal-messages] .uk-alert-danger',
   },
 };
 

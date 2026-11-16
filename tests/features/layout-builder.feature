@@ -16,6 +16,7 @@ Feature: Layout Builder
     And I wait for the AJAX requests to finish
     Then the layout should have 2 sections
     And I should see a warning message "You have unsaved changes."
+    And I should not see an error message
     When I save the layout
     Then I should see a status message "The layout override has been saved."
     And I should be on an "article" page
