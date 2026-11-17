@@ -158,7 +158,7 @@ Everything the pack reads is under `worldParameters` in `cucumber.js`. Each valu
 | `DRUPAL_AUTHENTICATED_USER`, `DRUPAL_AUTHENTICATED_PASS`, `DRUPAL_AUTHENTICATED_MAIL` | `authenticated`, `authenticated`, `authenticated@example.com` | the `authenticated` handle, an account with no role |
 | `DRUPAL_REVIEWER_USER`, `DRUPAL_REVIEWER_PASS`, `DRUPAL_REVIEWER_MAIL` | `reviewer_with_a_long_name`, `reviewer`, `reviewer@example.com` | the `reviewer` handle, a name longer than 20 characters |
 | `DRUPAL_ANONYMOUS_NAME`, `DRUPAL_ANONYMOUS_EMAIL` | `Webship QA`, `qa@example.com` | what a visitor types into the contact form |
-| `DRUPAL_LOGIN_WAIT` | `0` | milliseconds the login by handle waits before it submits (`loginWait`), for a login form protected by a time limit |
+| `DRUPAL_LOGIN_WAIT` | `0` | milliseconds the login by handle waits before it submits (`loginWait`), for a login form protected by a time limit: a site with the Honeypot module's time limit on the login form needs it (`3000` on a Webship site) |
 | `DRUPAL_FORM_WAIT` | `5000` | milliseconds `I wait out the form time limit` waits (`formWait`) |
 | `DRUPAL_MAJOR` | `11` | the Drupal major version of the site: the run leaves out the scenarios tagged for the other one (`@drupal12`, or `@drupal11` when it is `12`) |
 | `CUCUMBER_TAGS` | `not @wip and not @auth-setup and not @provisioning and not @drupal12` | the tag expression of the run |
@@ -239,7 +239,7 @@ The same hook points the `I attach the file "<name>" to "<field>"` steps at the 
 
 **The status of a page.** `the page should return HTTP status 403` asks with the cookies of the current session. webship-js's `the response status code should be 403` asks as a visitor with no session.
 
-**Protected forms.** A form protection with a time limit (the Honeypot module) refuses a form that is sent too soon. `I wait out the form time limit` waits `formWait` milliseconds in front of the submit; `loginWait` does the same inside the login by handle. webship-js's `I wait 5 seconds` is a budget for the page to settle, not a delay, so it does not help here.
+**Protected forms.** A form protection with a time limit (the Honeypot module) refuses a form that is sent too soon. On the login form this decides the whole run: a login sent too soon is refused, and Honeypot lengthens its time limit after each refused form from the same address, so every later login of the run is refused too, also those of another suite running at the same time from that address. Set `DRUPAL_LOGIN_WAIT` (`3000` on a Webship site) before the first run against such a site. `I wait out the form time limit` waits `formWait` milliseconds in front of the submit; `loginWait` does the same inside the login by handle. webship-js's `I wait 5 seconds` is a budget for the page to settle, not a delay, so it does not help here.
 
 **Roles and permissions.** `the "Content editor" role should have the "access content overview" permission` reads the role's permissions form with the current session. It needs no command line, so it runs against any site the suite can log in to. The permission is named by its machine name or by its title on the form.
 
