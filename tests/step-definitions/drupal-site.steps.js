@@ -12,7 +12,6 @@
 // role, the Main navigation links and made /home the front page".
 
 const { Given, When, Then } = require('@cucumber/cucumber');
-const assert = require('assert');
 const { friendly } = require('webship-js/tests/step-definitions/webship');
 const { joinUrl, navigate, supplied } = require('./drupal-helpers');
 
@@ -78,16 +77,13 @@ Then(/^the "([^"]*)" module should( not)* be (?:installed|enabled)$/, async func
   const html = await adminHtml(this, '/admin/modules', 'the Extend page (/admin/modules)');
   const input = html.match(new RegExp(`<input[^>]*name="modules\\[${escapeRe(machineName)}\\]\\[enable\\]"[^>]*>`));
   const installed = Boolean(input) && /\schecked(?:=|\s|>|\/)/.test(input[0]);
-  assert.ok(
-    notCase ? !installed : installed,
-    friendly({
-      message: notCase
-        ? `Expected the "${machineName}" module not to be installed.`
-        : `Expected the "${machineName}" module to be installed.`,
-      cause: input ? `the Extend page lists it as ${installed ? 'installed' : 'not installed'}` : 'the Extend page does not list it at all',
-      hint: 'Use the module machine name (the folder name), not its label.',
-    }).message
-  );
+  if (!(notCase ? !installed : installed)) throw friendly({
+    message: notCase
+      ? `Expected the "${machineName}" module not to be installed.`
+      : `Expected the "${machineName}" module to be installed.`,
+    cause: input ? `the Extend page lists it as ${installed ? 'installed' : 'not installed'}` : 'the Extend page does not list it at all',
+    hint: 'Use the module machine name (the folder name), not its label.',
+  });
 });
 
 /**
@@ -108,15 +104,12 @@ Then(/^the default theme should( not)* be "([^"]*)"$/, async function (notCase, 
   const heading = (html.match(/<h3[^>]*>[\s\S]*?<\/h3>/g) || []).map(textOf).find((t) => /\(default theme\b[^)]*\)/i.test(t));
   const current = heading ? heading.replace(/\(default theme\b[^)]*\)/i, '').replace(/\s+\d[\w.-]*$/, '').trim() : '';
   const matches = current.toLowerCase().startsWith(themeName.toLowerCase());
-  assert.ok(
-    notCase ? !matches : matches,
-    friendly({
-      message: notCase
-        ? `Expected the default theme not to be "${themeName}".`
-        : `Expected the default theme to be "${themeName}".`,
-      cause: heading ? `the Appearance page shows "${heading}"` : 'the Appearance page shows no default theme',
-    }).message
-  );
+  if (!(notCase ? !matches : matches)) throw friendly({
+    message: notCase
+      ? `Expected the default theme not to be "${themeName}".`
+      : `Expected the default theme to be "${themeName}".`,
+    cause: heading ? `the Appearance page shows "${heading}"` : 'the Appearance page shows no default theme',
+  });
 });
 
 /**
@@ -167,13 +160,10 @@ Then(/^the "([^"]*)" role should( not)* exist$/, async function (label, notCase)
   const html = await adminHtml(this, '/admin/people/roles', 'the Roles page (/admin/people/roles)');
   const rows = (html.match(/<tr[\s\S]*?<\/tr>/g) || []).map(textOf);
   const found = rows.some((row) => new RegExp(`(^|\\s)${escapeRe(label)}(\\s|$)`, 'i').test(row));
-  assert.ok(
-    notCase ? !found : found,
-    friendly({
-      message: notCase ? `Expected no "${label}" role, but it is listed.` : `Expected a "${label}" role, but none is listed.`,
-      cause: `the Roles page lists ${rows.length} row(s)`,
-    }).message
-  );
+  if (!(notCase ? !found : found)) throw friendly({
+    message: notCase ? `Expected no "${label}" role, but it is listed.` : `Expected a "${label}" role, but none is listed.`,
+    cause: `the Roles page lists ${rows.length} row(s)`,
+  });
 });
 
 /**
@@ -255,15 +245,12 @@ Then(/^the "([^"]*)" role should( not)* have the "([^"]*)" permission$/, async f
       hint: 'Pass the permission machine name ("create article content") or its title as the form prints it ("Article: Create new content"). A permission exists only while the module that defines it is installed.',
     });
   }
-  assert.ok(
-    notCase ? !state.granted : state.granted,
-    friendly({
-      message: notCase
-        ? `Expected the "${found.label}" role not to have the "${permission}" permission.`
-        : `Expected the "${found.label}" role to have the "${permission}" permission.`,
-      cause: `the permissions form shows it ${state.granted ? 'granted' : 'not granted'}`,
-    }).message
-  );
+  if (!(notCase ? !state.granted : state.granted)) throw friendly({
+    message: notCase
+      ? `Expected the "${found.label}" role not to have the "${permission}" permission.`
+      : `Expected the "${found.label}" role to have the "${permission}" permission.`,
+    cause: `the permissions form shows it ${state.granted ? 'granted' : 'not granted'}`,
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -329,16 +316,13 @@ Then(/^the status report should (have no|not have any|not have|have) (errors|war
   const report = await readStatusReport(this);
   const count = report.counts[key];
   const wantNone = polarity !== 'have';
-  assert.ok(
-    wantNone ? count === 0 : count > 0,
-    friendly({
-      message: wantNone ? `Expected the status report to have no ${kind}.` : `Expected the status report to have ${kind}.`,
-      cause: count
-        ? `it counts ${count}: ${report.entries[key].join(', ') || 'the entries could not be read'}`
-        : `it counts none (${report.counts.error} error(s), ${report.counts.warning} warning(s), ${report.counts.checked} checked)`,
-      hint: 'Open /admin/reports/status as an administrator for the full text of each entry.',
-    }).message
-  );
+  if (!(wantNone ? count === 0 : count > 0)) throw friendly({
+    message: wantNone ? `Expected the status report to have no ${kind}.` : `Expected the status report to have ${kind}.`,
+    cause: count
+      ? `it counts ${count}: ${report.entries[key].join(', ') || 'the entries could not be read'}`
+      : `it counts none (${report.counts.error} error(s), ${report.counts.warning} warning(s), ${report.counts.checked} checked)`,
+    hint: 'Open /admin/reports/status as an administrator for the full text of each entry.',
+  });
 });
 
 /**
@@ -358,13 +342,10 @@ Then(/^the status report should count (at most )?(\d+) (errors?|warnings?)$/, as
   const report = await readStatusReport(this);
   const count = report.counts[key];
   const want = parseInt(expected, 10);
-  assert.ok(
-    supplied(atMost) ? count <= want : count === want,
-    friendly({
-      message: `Expected the status report to count ${supplied(atMost) ? 'at most ' : ''}${want} ${key}(s).`,
-      cause: `it counts ${count}${report.entries[key].length ? `: ${report.entries[key].join(', ')}` : ''}`,
-    }).message
-  );
+  if (!(supplied(atMost) ? count <= want : count === want)) throw friendly({
+    message: `Expected the status report to count ${supplied(atMost) ? 'at most ' : ''}${want} ${key}(s).`,
+    cause: `it counts ${count}${report.entries[key].length ? `: ${report.entries[key].join(', ')}` : ''}`,
+  });
 });
 
 /**
@@ -382,15 +363,12 @@ Then(/^the status report should count (at most )?(\d+) (errors?|warnings?)$/, as
 Then(/^the status report should( not)* list the (error|warning) "([^"]*)"$/, async function (notCase, key, title) {
   const report = await readStatusReport(this);
   const found = report.entries[key].some((entry) => entry.toLowerCase() === title.trim().toLowerCase());
-  assert.ok(
-    notCase ? !found : found,
-    friendly({
-      message: notCase
-        ? `Expected the status report not to list the ${key} "${title}".`
-        : `Expected the status report to list the ${key} "${title}".`,
-      cause: report.entries[key].length ? `its ${key}s are: ${report.entries[key].join(', ')}` : `it lists no ${key}`,
-    }).message
-  );
+  if (!(notCase ? !found : found)) throw friendly({
+    message: notCase
+      ? `Expected the status report not to list the ${key} "${title}".`
+      : `Expected the status report to list the ${key} "${title}".`,
+    cause: report.entries[key].length ? `its ${key}s are: ${report.entries[key].join(', ')}` : `it lists no ${key}`,
+  });
 });
 
 /**
@@ -424,15 +402,12 @@ Then(/^the "([^"]*)" menu should( not)* (?:contain|list) "([^"]*)"$/, async func
   const html = await adminHtml(this, `/admin/structure/menu/manage/${machineName}`, `the "${menu}" menu's edit page`);
   const titles = (html.match(/<a[^>]*class="[^"]*\bmenu-item__link\b[^"]*"[^>]*>[\s\S]*?<\/a>|<td[^>]*class="[^"]*menu-item-title[^"]*"[\s\S]*?<\/td>/g) || []).map(textOf);
   const found = titles.some((t) => t === linkTitle) || (html.match(/<tr[\s\S]*?<\/tr>/g) || []).some((row) => new RegExp(`(^|\\s)${escapeRe(linkTitle)}(\\s|$)`).test(textOf(row)));
-  assert.ok(
-    notCase ? !found : found,
-    friendly({
-      message: notCase
-        ? `Expected the "${menu}" menu not to contain a "${linkTitle}" link.`
-        : `Expected the "${menu}" menu to contain a "${linkTitle}" link.`,
-      cause: titles.length ? `its links are: ${titles.join(', ')}` : 'the menu lists no links',
-    }).message
-  );
+  if (!(notCase ? !found : found)) throw friendly({
+    message: notCase
+      ? `Expected the "${menu}" menu not to contain a "${linkTitle}" link.`
+      : `Expected the "${menu}" menu to contain a "${linkTitle}" link.`,
+    cause: titles.length ? `its links are: ${titles.join(', ')}` : 'the menu lists no links',
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -456,13 +431,10 @@ Then(/^the front page path should( not)* be "([^"]*)"$/, async function (notCase
   const value = input && (input[0].match(/value="([^"]*)"/) || [])[1];
   const current = supplied(value) ? value : null;
   const matches = current === expected;
-  assert.ok(
-    notCase ? !matches : matches,
-    friendly({
-      message: notCase ? `Expected the front page path not to be "${expected}".` : `Expected the front page path to be "${expected}".`,
-      cause: current === null ? 'the form has no front page field' : `it is "${current}"`,
-    }).message
-  );
+  if (!(notCase ? !matches : matches)) throw friendly({
+    message: notCase ? `Expected the front page path not to be "${expected}".` : `Expected the front page path to be "${expected}".`,
+    cause: current === null ? 'the form has no front page field' : `it is "${current}"`,
+  });
 });
 
 /**
@@ -489,15 +461,12 @@ Then(/^(?:(?:the )?page should( not)* have the canonical URL "([^"]*)"|(?:the )?
   try { path = new URL(href, this.launchUrl).pathname; } catch (e) { /* keep as is */ }
   const notCase = supplied(exact) ? notA : notB;
   const matches = supplied(exact) ? path === exact : path.endsWith(suffix);
-  assert.ok(
-    notCase ? !matches : matches,
-    friendly({
-      message: notCase
-        ? `Expected the canonical URL not to ${supplied(exact) ? 'be' : 'end with'} "${supplied(exact) ? exact : suffix}".`
-        : `Expected the canonical URL to ${supplied(exact) ? 'be' : 'end with'} "${supplied(exact) ? exact : suffix}".`,
-      cause: `it is "${href}"`,
-    }).message
-  );
+  if (!(notCase ? !matches : matches)) throw friendly({
+    message: notCase
+      ? `Expected the canonical URL not to ${supplied(exact) ? 'be' : 'end with'} "${supplied(exact) ? exact : suffix}".`
+      : `Expected the canonical URL to ${supplied(exact) ? 'be' : 'end with'} "${supplied(exact) ? exact : suffix}".`,
+    cause: `it is "${href}"`,
+  });
 });
 
 /**
@@ -526,15 +495,12 @@ Then(/^the "([^"]*)" meta tag should( not)* (be|contain) "([^"]*)"$/, async func
     });
   }
   const matches = mode === 'be' ? content.trim() === expected : content.includes(expected);
-  assert.ok(
-    notCase ? !matches : matches,
-    friendly({
-      message: notCase
-        ? `Expected the "${name}" meta tag not to ${mode} "${expected}".`
-        : `Expected the "${name}" meta tag to ${mode} "${expected}".`,
-      cause: `it reads "${content}"`,
-    }).message
-  );
+  if (!(notCase ? !matches : matches)) throw friendly({
+    message: notCase
+      ? `Expected the "${name}" meta tag not to ${mode} "${expected}".`
+      : `Expected the "${name}" meta tag to ${mode} "${expected}".`,
+    cause: `it reads "${content}"`,
+  });
 });
 
 module.exports = { adminHtml, textOf, resolveRole, readStatusReport };

@@ -52,15 +52,12 @@ Then(/^the "([^"]*)" content type should( not)* exist$/, async function (label, 
   const rows = html.match(/<tr[\s\S]*?<\/tr>/g) || [];
   const text = (s) => s.replace(/<[^>]+>/g, ' ').replace(/&#039;|&quot;/g, '\'').replace(/\s+/g, ' ');
   const found = rows.some((row) => new RegExp(`(^|\\s)${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s|$)`).test(text(row)));
-  assert.ok(
-    notCase ? !found : found,
-    friendly({
-      message: notCase
-        ? `Expected no "${label}" content type, but it is listed.`
-        : `Expected a "${label}" content type, but none is listed.`,
-      cause: `the listing has ${rows.length} row(s)`,
-    }).message
-  );
+  if (!(notCase ? !found : found)) throw friendly({
+    message: notCase
+      ? `Expected no "${label}" content type, but it is listed.`
+      : `Expected a "${label}" content type, but none is listed.`,
+    cause: `the listing has ${rows.length} row(s)`,
+  });
 });
 
 /**
@@ -154,22 +151,16 @@ Then(/^the "([^"]*)" field should block submission as required$/, async function
       return found;
     });
   }
-  assert.ok(
-    invalid.length > 0,
-    friendly({
-      message: 'Expected the form to be blocked by an empty required field.',
-      cause: 'every field of the forms on the page passes the browser\'s validation',
-      hint: 'A form with the "novalidate" attribute is validated by the server instead: assert its error message.',
-    }).message
-  );
+  if (!(invalid.length > 0)) throw friendly({
+    message: 'Expected the form to be blocked by an empty required field.',
+    cause: 'every field of the forms on the page passes the browser\'s validation',
+    hint: 'A form with the "novalidate" attribute is validated by the server instead: assert its error message.',
+  });
   const wanted = label.trim().toLowerCase();
-  assert.ok(
-    invalid.some((field) => field.label.toLowerCase().includes(wanted) || field.name.toLowerCase() === wanted),
-    friendly({
-      message: `Expected the "${label}" field to block submission.`,
-      cause: `the blocking fields are: ${invalid.map((field) => `"${field.label}" (${field.message})`).join(', ')}`,
-    }).message
-  );
+  if (!invalid.some((field) => field.label.toLowerCase().includes(wanted) || field.name.toLowerCase() === wanted)) throw friendly({
+    message: `Expected the "${label}" field to block submission.`,
+    cause: `the blocking fields are: ${invalid.map((field) => `"${field.label}" (${field.message})`).join(', ')}`,
+  });
 });
 
 /**
@@ -208,15 +199,12 @@ Then(/^the (?:content )?moderation state should( not)* be "([^"]*)"$/, async fun
     });
   }
   const matches = current.toLowerCase().includes(state.toLowerCase());
-  assert.ok(
-    notCase ? !matches : matches,
-    friendly({
-      message: notCase
-        ? `Expected the moderation state not to be "${state}".`
-        : `Expected the moderation state to be "${state}".`,
-      cause: `the control reads "${current}"`,
-    }).message
-  );
+  if (!(notCase ? !matches : matches)) throw friendly({
+    message: notCase
+      ? `Expected the moderation state not to be "${state}".`
+      : `Expected the moderation state to be "${state}".`,
+    cause: `the control reads "${current}"`,
+  });
 });
 
 /**

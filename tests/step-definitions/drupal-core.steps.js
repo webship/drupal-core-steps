@@ -560,18 +560,15 @@ Then(/^the site generator should( not)* be "([^"]*)"$/, async function (notCase,
   const matches = wanted !== '' && content.toLowerCase().startsWith(wanted.toLowerCase())
     && !/[A-Za-z0-9.]/.test(content.charAt(wanted.length));
 
-  assert.ok(
-    notCase ? !matches : matches,
-    friendly({
-      message: notCase
-        ? `Expected the site not to report "${wanted}" as its generator.`
-        : `Expected the site to report "${wanted}" as its generator.`,
-      cause: count
-        ? `the Generator meta tag reads "${content}"`
-        : 'the page has no <meta name="Generator"> tag',
-      hint: 'The System module prints this tag; a site can remove it in its settings or with a module.',
-    }).message
-  );
+  if (!(notCase ? !matches : matches)) throw friendly({
+    message: notCase
+      ? `Expected the site not to report "${wanted}" as its generator.`
+      : `Expected the site to report "${wanted}" as its generator.`,
+    cause: count
+      ? `the Generator meta tag reads "${content}"`
+      : 'the page has no <meta name="Generator"> tag',
+    hint: 'The System module prints this tag; a site can remove it in its settings or with a module.',
+  });
 });
 
 /**
@@ -592,14 +589,11 @@ Then(/^the core (?:JavaScript|javascript) settings should( not)* be initialized$
   await assertPresence(tag, notCase, 'the settings payload (\'script[data-drupal-selector="drupal-settings-json"]\')', { attached: true });
   if (notCase) return;
   const initialized = await this.page.evaluate(() => typeof window.drupalSettings === 'object' && window.drupalSettings !== null);
-  assert.ok(
-    initialized,
-    friendly({
-      message: 'Expected the core JavaScript settings object to be initialized.',
-      cause: 'the settings payload is in the markup but `window.drupalSettings` is not an object',
-      hint: 'Core\'s drupal.js builds it from the payload: check the page for a JavaScript error that stopped it.',
-    }).message
-  );
+  if (!initialized) throw friendly({
+    message: 'Expected the core JavaScript settings object to be initialized.',
+    cause: 'the settings payload is in the markup but `window.drupalSettings` is not an object',
+    hint: 'Core\'s drupal.js builds it from the payload: check the page for a JavaScript error that stopped it.',
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1216,18 +1210,15 @@ Then(/^(?:the )?(?:page|response) should( not)* be served from the (dynamic page
   const value = headers[header];
   const hit = String(value || '').toUpperCase() === 'HIT';
 
-  assert.ok(
-    notCase ? !hit : hit,
-    friendly({
-      message: notCase
-        ? `Expected the response not to come from the ${cacheName} cache.`
-        : `Expected the response to come from the ${cacheName} cache.`,
-      cause: supplied(value)
-        ? `"${header}" was "${value}"`
-        : `the response carried no "${header}" header`,
-      hint: 'The Internal Page Cache only serves anonymous requests; the Dynamic Page Cache only serves cacheable ones.',
-    }).message
-  );
+  if (!(notCase ? !hit : hit)) throw friendly({
+    message: notCase
+      ? `Expected the response not to come from the ${cacheName} cache.`
+      : `Expected the response to come from the ${cacheName} cache.`,
+    cause: supplied(value)
+      ? `"${header}" was "${value}"`
+      : `the response carried no "${header}" header`,
+    hint: 'The Internal Page Cache only serves anonymous requests; the Dynamic Page Cache only serves cacheable ones.',
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1255,16 +1246,13 @@ Then(/^(?:the )?(?:current )?page should( not)* (?:return|respond with) (?:HTTP 
   const status = await sessionStatus(this.page, url);
   const expected = parseInt(expectedStatus, 10);
   const matches = status === expected;
-  assert.ok(
-    notCase ? !matches : matches,
-    friendly({
-      message: notCase
-        ? `Expected ${url} not to return HTTP ${expected} for the current session.`
-        : `Expected ${url} to return HTTP ${expected} for the current session.`,
-      cause: `it returned ${status}`,
-      hint: 'This request carries the browser session cookies; the webship-js status step does not.',
-    }).message
-  );
+  if (!(notCase ? !matches : matches)) throw friendly({
+    message: notCase
+      ? `Expected ${url} not to return HTTP ${expected} for the current session.`
+      : `Expected ${url} to return HTTP ${expected} for the current session.`,
+    cause: `it returned ${status}`,
+    hint: 'This request carries the browser session cookies; the webship-js status step does not.',
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1304,13 +1292,13 @@ Then(/^(I |we )*should( not)* see the "([^"]*)" operation for the "([^"]*)"(?: (
 
   if (notCase) {
     if (found.rowMissing) return;
-    assert.ok(!found.link, friendly(`The "${rowText}" row unexpectedly offers the "${operation}" operation.`).message);
+    if (found.link) throw friendly(`The "${rowText}" row unexpectedly offers the "${operation}" operation.`);
     return;
   }
   if (found.rowMissing) {
     throw friendly(`No listing row containing "${rowText}" was found on the page.`);
   }
-  assert.ok(found.link, friendly(`The "${rowText}" row does not offer the "${operation}" operation.`).message);
+  if (!found.link) throw friendly(`The "${rowText}" row does not offer the "${operation}" operation.`);
 });
 
 /**
@@ -1406,11 +1394,7 @@ Then(/^the checkbox (labeled|labelled|with the id) "([^"]*)" should be (checked|
       hint: byLabel ? 'Pass the visible label text, or use "the checkbox with the id" with its machine handle.' : 'Form API derives the id from the field name: status[value] becomes edit-status-value.',
     });
   }
-  assert.strictEqual(
-    actual,
-    want,
-    friendly(`The "${handle}" checkbox is ${actual ? 'checked' : 'unchecked'}, expected ${state}.`).message
-  );
+  if (actual !== want) throw friendly(`The "${handle}" checkbox is ${actual ? 'checked' : 'unchecked'}, expected ${state}.`);
 });
 
 // ---------------------------------------------------------------------------
