@@ -502,7 +502,9 @@ Then(/^(?:(?:the )?page should( not)* have the canonical URL "([^"]*)"|(?:the )?
 
 /**
  * Assert the content of a meta tag, by its `name` or `property`
- * ("description", "og:title", "robots"), exactly or as a substring.
+ * ("description", "og:title", "robots"), exactly or as a substring. A page
+ * without the tag passes the negative forms (it does not contain "noindex"
+ * when it has no robots meta tag at all) and fails the positive ones.
  *
  * Example #1: Then the "description" meta tag should contain "Sample"
  * Example #2: And the "og:title" meta tag should be "Sample article"
@@ -517,6 +519,7 @@ Then(/^the "([^"]*)" meta tag should( not)* (be|contain) "([^"]*)"$/, async func
     return el ? el.getAttribute('content') : null;
   }, name);
   if (!supplied(content)) {
+    if (notCase) return;
     throw friendly({
       message: `The page has no "${name}" meta tag.`,
       hint: 'Pass the tag\'s name or property attribute as it appears in the markup.',
