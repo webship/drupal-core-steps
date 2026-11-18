@@ -271,7 +271,7 @@ The site has no "article" content type.
 
 ```gherkin
 # A JSON:API document (core's jsonapi module).
-Given the API base URL is "https://your-drupal-site.example"
+Given the API base URL is "https://your-site.example"
 When I send a GET request to "/jsonapi"
 Then the API response code should be 200
 And the JSON response should have property "jsonapi.version"
