@@ -319,6 +319,7 @@ What the build adds to a Standard installation:
 | `npm test` | the suite |
 | `npm run test:dry` | `--dry-run`: undefined and ambiguous steps, no browser |
 | `npm run test:examples` | no browser: every step has a JSDoc block with five `Example #n:` lines, each example matches its own definition and no other, and every feature step resolves to exactly one definition |
+| `npm run test:paths` | no browser: a feature or a scenario named on the command line runs alone (`npx cucumber-js tests/features/login.feature`, or `tests/features/login.feature:12` for one scenario), and naming none runs the whole suite |
 | `npm run test:provisioning` | the optional provisioning feature, with its own registry |
 | `npm run test:headed` | a visible browser |
 | `npm run test:chromium`, `test:firefox`, `test:webkit` | a specific browser |
