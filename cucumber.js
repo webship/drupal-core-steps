@@ -105,7 +105,7 @@ const config = {
     requireModule: ['tsx/cjs'],
     require: [
       'node_modules/webship-js/tests/step-definitions/**/*.js',          // Webship-js core step definitions (auto HTML report on exit; disable: WEBSHIP_REPORT_DISABLE=1).
-      // 'node_modules/webship-js/tests/step-definitions-diffy/**/*.js', // Diffy step definitions (optional).
+      // 'node_modules/@webship-js/diffy-steps/tests/step-definitions/**/*.js', // Visual comparison steps (optional; npm install --save-dev @webship-js/diffy-steps).
       'tests/step-definitions/**/*.js',                                  // This pack (a project lists node_modules/@webship-js/drupal-core-steps/tests/step-definitions/**/*.js instead).
     ],
     // FEATURES=tests/features/login.feature,tests/features/logout.feature runs a subset too.
