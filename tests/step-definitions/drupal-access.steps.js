@@ -7,7 +7,6 @@
 // wording, so they hold on any Drupal site.
 
 const { Then } = require('@cucumber/cucumber');
-const assert = require('assert');
 const { gotoUrl, waitForPageLoad, friendly } = require('webship-js/tests/step-definitions/webship');
 const {
   WAIT_TIMEOUT,
@@ -62,14 +61,11 @@ async function probeAccess(world, path) {
  */
 Then(/^(I |we )*(?:am|are|should be) (?:denied access to|refused) "([^"]*)"$/, async function (pronounCase, path) {
   const result = await probeAccess(this, path);
-  assert.ok(
-    result.denied,
-    friendly({
-      message: `Expected the current session to be denied access to ${path}.`,
-      cause: `it answered ${result.status} at ${result.url}`,
-      hint: 'A refused request is a 403 or 404, a redirect to the login form, or core\'s "Access denied" page.',
-    }).message
-  );
+  if (!result.denied) throw friendly({
+    message: `Expected the current session to be denied access to ${path}.`,
+    cause: `it answered ${result.status} at ${result.url}`,
+    hint: 'A refused request is a 403 or 404, a redirect to the login form, or core\'s "Access denied" page.',
+  });
 });
 
 /**
@@ -85,14 +81,11 @@ Then(/^(I |we )*(?:am|are|should be) (?:denied access to|refused) "([^"]*)"$/, a
  */
 Then(/^(I |we )*(?:am|are|should be) (?:allowed access to|granted access to|allowed) "([^"]*)"$/, async function (pronounCase, path) {
   const result = await probeAccess(this, path);
-  assert.ok(
-    result.status >= 200 && result.status < 300 && !result.denied,
-    friendly({
-      message: `Expected the current session to be allowed access to ${path}.`,
-      cause: result.denied ? `the request was refused (${result.status} at ${result.url})` : `it answered ${result.status}`,
-      hint: 'Log in as a user whose role has the permission the route needs, or check the path.',
-    }).message
-  );
+  if (!(result.status >= 200 && result.status < 300 && !result.denied)) throw friendly({
+    message: `Expected the current session to be allowed access to ${path}.`,
+    cause: result.denied ? `the request was refused (${result.status} at ${result.url})` : `it answered ${result.status}`,
+    hint: 'Log in as a user whose role has the permission the route needs, or check the path.',
+  });
 });
 
 /**
@@ -112,13 +105,10 @@ Then(/^(?:(?:I |we )*should be denied access|(?:the )?page should be access rest
   const markers = await this.page.locator(DENIED_MARKERS).count();
   const texts = await this.page.evaluate(() => ({ title: document.title || '', body: (document.body && document.body.innerText) || '' })).catch(() => ({ title: '', body: '' }));
   const denied = status === 403 || markers > 0 || /^Access denied\b/i.test(texts.title.trim()) || DENIED_TEXT.test(texts.body.slice(0, 5000));
-  assert.ok(
-    denied,
-    friendly({
-      message: `Expected ${this.page.url()} to be access restricted for the current session.`,
-      cause: `it answers ${status} and shows no access-denied marker`,
-    }).message
-  );
+  if (!denied) throw friendly({
+    message: `Expected ${this.page.url()} to be access restricted for the current session.`,
+    cause: `it answers ${status} and shows no access-denied marker`,
+  });
 });
 
 /**
@@ -145,15 +135,12 @@ Then(/^(I |we )*should( not)* be able to (edit|delete) the content at "([^"]*)"$
   const url = joinUrl(this.launchUrl, `/node/${nid}/${operation}`);
   const status = await sessionStatus(this.page, url);
   const allowed = status >= 200 && status < 300;
-  assert.ok(
-    notCase ? !allowed : allowed,
-    friendly({
-      message: notCase
-        ? `Expected the current session not to be able to ${operation} the content at ${path}.`
-        : `Expected the current session to be able to ${operation} the content at ${path}.`,
-      cause: `/node/${nid}/${operation} answered ${status}`,
-    }).message
-  );
+  if (!(notCase ? !allowed : allowed)) throw friendly({
+    message: notCase
+      ? `Expected the current session not to be able to ${operation} the content at ${path}.`
+      : `Expected the current session to be able to ${operation} the content at ${path}.`,
+    cause: `/node/${nid}/${operation} answered ${status}`,
+  });
 });
 
 /**
@@ -180,14 +167,11 @@ Then(/^(?:the )?page should (?:not have(?: any)?|have no) PHP errors$/, async fu
     /Uncaught\s+\w*(?:Exception|Error)\b/,
   ];
   const hit = patterns.map((re) => text.match(re)).find(Boolean);
-  assert.ok(
-    !hit,
-    friendly({
-      message: `The page at ${this.page.url()} shows a PHP error.`,
-      cause: hit ? hit[0].slice(0, 300) : '',
-      hint: 'Read the site log (/admin/reports/dblog) for the full message.',
-    }).message
-  );
+  if (hit) throw friendly({
+    message: `The page at ${this.page.url()} shows a PHP error.`,
+    cause: hit ? hit[0].slice(0, 300) : '',
+    hint: 'Read the site log (/admin/reports/dblog) for the full message.',
+  });
 });
 
 module.exports = { probeAccess };

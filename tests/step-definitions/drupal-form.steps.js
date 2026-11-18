@@ -9,7 +9,6 @@
 // and taxonomy terms and menu links, created and removed again.
 
 const { Given, When, Then } = require('@cucumber/cucumber');
-const assert = require('assert');
 const { waitForPageLoad, smartSettle, friendly } = require('webship-js/tests/step-definitions/webship');
 const {
   WAIT_TIMEOUT,
@@ -227,14 +226,11 @@ When(/^(I |we )*wait out the form time limit(?: of (\d+) seconds?)?$/, async fun
 Then(/^the (?:page|form) should have been open for at least (\d+) seconds?$/, async function (seconds) {
   const elapsed = await this.page.evaluate(() => performance.now());
   const want = parseInt(seconds, 10) * 1000;
-  assert.ok(
-    elapsed >= want,
-    friendly({
-      message: `Expected the page to have been open for at least ${seconds} second(s).`,
-      cause: `it has been open for ${(elapsed / 1000).toFixed(1)} second(s)`,
-      hint: 'Put "I wait out the form time limit" in front of the submit of a form that a time limit protects.',
-    }).message
-  );
+  if (elapsed < want) throw friendly({
+    message: `Expected the page to have been open for at least ${seconds} second(s).`,
+    cause: `it has been open for ${(elapsed / 1000).toFixed(1)} second(s)`,
+    hint: 'Put "I wait out the form time limit" in front of the submit of a form that a time limit protects.',
+  });
 });
 
 /**
