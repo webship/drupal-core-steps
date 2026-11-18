@@ -51,7 +51,7 @@ Feature: Site structure
     And the canonical URL should end with "/sample-article"
     And the page should not have the canonical URL "/node/1"
     And the "Generator" meta tag should contain "Drupal"
-    And the "Generator" meta tag should not be "WordPress"
+    And the "Generator" meta tag should not be "Drupal"
 
   Scenario: A page without a robots meta tag is not kept out of search engines
     Given I am on "/sample-article"
