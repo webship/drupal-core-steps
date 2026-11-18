@@ -79,6 +79,11 @@ jobs:
       - name: Check the step examples and the feature steps against the definitions
         run: npm run test:examples
 
+
+      - name: Check that a feature named on the command line runs alone
+
+        run: npm run test:paths
+
       - name: Dry run (no undefined and no ambiguous step)
         run: npm run test:dry
 
