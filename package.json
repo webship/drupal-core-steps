@@ -65,7 +65,7 @@
   },
   "devDependencies": {
     "tsx": "^4.19.2",
-    "webship-js": "^2.0.10"
+    "webship-js": "^2.0.15"
   },
   "overrides": {
     "@cucumber/cucumber": "^12"
