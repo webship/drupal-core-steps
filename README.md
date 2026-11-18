@@ -18,6 +18,135 @@ Feature: Editorial access
     And the "Content editor" role should not have the "administer users" permission
 ```
 
+## From nothing to a green run
+
+What the machine needs: Docker, [DDEV](https://ddev.com), git, and Node.js 20
+or later with npm. PHP, Composer and the database run in DDEV's containers.
+
+**1. The Drupal site.** The pack's own build script (the one CI runs) installs
+Drupal 11 with the Standard profile in a DDEV project, creates the accounts of
+[Test users](#test-users) and adds the fixtures the features name (see
+[Running this repository's own suite](#running-this-repositorys-own-suite));
+Composer fetches Drupal first, which takes a few minutes the first time.
+
+```bash
+git clone https://github.com/webship/drupal-core-steps.git
+drupal-core-steps/tests/seed/build-site.sh 11
+```
+
+The site answers at `http://drupal-core-steps-site.ddev.site` (`DRUPAL_SITE_NAME=<name>`
+in front of the script gives another project and `http://<name>.ddev.site`).
+
+In the [Webship Workspace](https://github.com/webship/workspace), its Drupal
+plugin builds the site instead, Drupal 11 with the Standard profile, in a sites
+folder of the workspace (`test/` here; `dev/`, `sandboxes/` and `demos/` work
+the same):
+
+```bash
+bash core/scripts/plugins.sh --require drupal --with-needs
+bash core/scripts/plugins.sh --activate drupal --with-needs
+bash core/scripts/plugins.sh --install drupal
+bash test/cmd-drupal-project.sh mysite --install --add-users
+```
+
+That site answers at `https://mysite.ddev.site`. Its accounts are the plugin's
+(`administrator`, `editor`, a Content editor, and `authenticated`, each with the
+password `dD.123123ddd` and the email address `<name>@example.com`; step 3
+names them). The features of
+[`tests/features/`](tests/features/) are written for the site the script
+builds: they also need its fixtures (the Article and Basic page types, the
+Image media type, Contact and Search, the "Sample article", Layout Builder on
+articles, the "Moderated page" type with the Editorial workflow; see
+[Running this repository's own suite](#running-this-repositorys-own-suite)).
+
+**2. A test project.**
+
+```bash
+mkdir drupal-tests && cd drupal-tests
+npm init -y
+npm install --save-dev webship-js @webship-js/drupal-core-steps
+npx init-webship-js
+```
+
+`npx init-webship-js` writes `cucumber.js`, `playwright.config.ts`, the
+`tests/` folders with a first feature and the `npm test` scripts, and installs
+Chromium. npm usually runs it already when it installs webship-js; a second
+run changes nothing.
+
+**3. `cucumber.js`.** Replace the file with the wiring of the pack: the step
+files of webship-js and of the pack, the address of the site, and the accounts
+(the JSON of [Test users](#test-users)).
+
+```javascript
+module.exports = {
+  default: {
+    requireModule: ['tsx/cjs'],
+    require: [
+      'node_modules/webship-js/tests/step-definitions/**/*.js',
+      'node_modules/@webship-js/drupal-core-steps/tests/step-definitions/**/*.js',
+      'tests/step-definitions/**/*.js',
+    ],
+    paths: ['tests/features/**/*.feature'],
+    format: ['@cucumber/pretty-formatter', 'json:tests/reports/cucumber_report.json'],
+    worldParameters: {
+      launchUrl: process.env.LAUNCH_URL || 'http://drupal-core-steps-site.ddev.site',
+      // The waits webship-js adds around each page, scenario and step (milliseconds).
+      minWaitTime: { page: 3000, before_scenario: 0, after_scenario: 0, before_step: 0, after_step: 0 },
+      users: {
+        admin: { username: 'admin', password: 'admin', email: 'admin@example.com', isAdmin: true },
+        editor: { username: 'editor', password: 'editor', email: 'editor@example.com', roles: ['content_editor'] },
+        authenticated: { username: 'authenticated', password: 'authenticated', email: 'authenticated@example.com', roles: [] },
+        reviewer: { username: 'reviewer_with_a_long_name', password: 'reviewer', email: 'reviewer@example.com', roles: ['content_editor'] },
+        anonymous: { name: 'Webship QA', email: 'qa@example.com' },
+      },
+    },
+  },
+};
+```
+
+On a site from the Webship Workspace (step 1), the accounts are the plugin's:
+`admin: { username: 'administrator', password: 'dD.123123ddd', email: 'administrator@example.com', isAdmin: true }`,
+and `editor` and `authenticated` with the same password and `<name>@example.com`
+(it has no `reviewer`). Its address goes in `LAUNCH_URL` (step 5).
+
+**4. A first feature**, `tests/features/first-run.feature`:
+
+```gherkin
+Feature: First run
+  Scenario: The editor logs in and gets the content overview
+    Given I am a logged in user with the "editor" user
+    And I am on the content overview page
+    Then I should see the page title "Content"
+
+  Scenario: A visitor opens the front page
+    Given I am an anonymous user
+    And I am on the homepage
+    Then I should be on the front page
+```
+
+**5. Run it.**
+
+```bash
+npm test
+```
+
+(`LAUNCH_URL=https://mysite.ddev.site npm test` for a site at another address.)
+A green first run prints every step, then the summary (the starter feature of
+`npx init-webship-js` and the two scenarios above, passed) and the HTML report
+it wrote:
+
+```
+3 scenarios (3 passed)
+8 steps (8 passed)
+0m04.510s (executing steps: 0m04.475s)
+[webship-js] HTML report → …/drupal-tests/tests/reports/cucumber_report.html
+```
+
+From there, copy the features of [`tests/features/`](tests/features/) (they
+also ship in the package, under
+`node_modules/@webship-js/drupal-core-steps/tests/features/`): together they
+use every step of the pack, against the site the build script makes.
+
 ## Supported versions
 
 | | Version | Notes |
@@ -65,6 +194,7 @@ Add both sets of step definitions to the project's `cucumber.js`, in this order:
 ```javascript
 module.exports = {
   default: {
+    requireModule: ['tsx/cjs'],                                                    // the playwright.config.ts of the scaffold
     require: [
       'node_modules/webship-js/tests/step-definitions/**/*.js',                    // webship-js
       'node_modules/@webship-js/drupal-core-steps/tests/step-definitions/**/*.js', // this pack
