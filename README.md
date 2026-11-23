@@ -20,7 +20,7 @@ Feature: Editorial access
 
 ## From nothing to a green run
 
-What the machine needs: Docker, [DDEV](https://ddev.com), git, and Node.js 20
+What the machine needs: Docker, [DDEV](https://ddev.com), git, and Node.js 24
 or later with npm. PHP, Composer and the database run in DDEV's containers.
 
 **1. The Drupal site.** The pack's own build script (the one CI runs) installs
@@ -154,7 +154,7 @@ use every step of the pack, against the site the build script makes.
 | Drupal | 11 and 12 | The same features run on both in CI. A scenario that cannot apply to one of them carries the tag `@drupal11` or `@drupal12`. |
 | Themes | any | The steps read what core states (see [How the steps find things](#how-the-steps-find-things)); core's themes need no configuration, another theme may need a few named selectors. |
 | webship-js | 2.0.6 or later | |
-| Node.js | 20 or later | |
+| Node.js | 24 or later | |
 
 ## What the pack covers
 
